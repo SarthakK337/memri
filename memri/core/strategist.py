@@ -19,73 +19,217 @@ if TYPE_CHECKING:
     from memri.llm.provider import BaseLLMProvider
 
 # ── Frustration signals ───────────────────────────────────────────────────────
-# Multi-layer detection: pattern matching catches clear signals fast;
-# LLM fallback catches subtle tone that patterns miss.
+# Three layers: word/phrase list, structural regex, punctuation/caps signals.
 
-_FRUSTRATION_PATTERNS = [
-    # Explicit profanity / strong language
-    r"\b(what the fuck|wtf|what the hell|what the heck|oh my god|omg|ffs|for fuck['s]* sake)\b",
-    r"\b(shit|damn it|dammit|jesus christ|holy shit)\b",
+# Layer 1: individual words and short phrases that indicate frustration
+# Checked via simple substring matching (fast, no regex overhead)
+_FRUSTRATION_WORDS: frozenset[str] = frozenset([
+    # Profanity / strong language
+    "fuck", "fucking", "fucked", "wtf", "what the fuck", "what the hell",
+    "what the heck", "ffs", "for fuck's sake", "for fucks sake",
+    "shit", "bullshit", "horseshit", "holy shit", "oh shit",
+    "damn", "dammit", "damn it", "goddamn", "goddammit",
+    "hell", "bloody hell", "for hell's sake",
+    "crap", "oh crap", "piss", "pissed", "pissed off",
+    "bastard", "screw this", "screw that", "screw you",
+    "smh", "omfg", "omg", "oh my god", "oh my goodness",
+    "jesus christ", "jesus", "christ",
 
-    # References to prior instructions being ignored
-    r"\b(i (already |just |literally )?(told|said|mentioned|asked|explained|showed|specified))\b",
-    r"\b(i (said|mentioned) (this|that|it) before\b)",
-    r"\b(as i (said|mentioned|noted|explained|pointed out))\b",
-    r"\b(like i (said|told you|mentioned|asked))\b",
-    r"\b(we (already |just )?(went over|discussed|talked about|covered) this)\b",
+    # Exasperation / disbelief
+    "seriously", "are you serious", "you're serious",
+    "unbelievable", "i can't believe this", "i cannot believe this",
+    "ridiculous", "absurd", "outrageous", "preposterous",
+    "pathetic", "useless", "worthless", "pointless", "hopeless",
+    "insane", "crazy", "nuts", "bonkers",
+    "what is wrong with you", "something is wrong with you",
+    "you must be kidding", "you've got to be kidding",
+    "you gotta be kidding", "you're kidding me", "you're joking",
+    "this is a joke", "this has to be a joke",
+    "i can't deal with this", "i cannot deal with this",
+    "i can't take this", "i cannot take this",
+    "i can't do this anymore", "enough is enough",
+    "this is too much", "i've had enough", "i have had enough",
+
+    # Prior instruction references
+    "i told you", "i already told you", "i just told you", "i literally told you",
+    "i said", "i already said", "as i said", "like i said",
+    "i mentioned", "i already mentioned", "as i mentioned", "like i mentioned",
+    "i explained", "i already explained", "as i explained",
+    "i showed you", "i already showed you", "i showed this",
+    "i asked", "i already asked", "i specifically asked",
+    "i specified", "i clearly specified", "i clearly stated",
+    "i noted", "i pointed out", "i made it clear",
+    "as i pointed out", "as i noted", "as i stated",
+    "we already discussed", "we went over this", "we covered this",
+    "we already went over", "we talked about this",
+    "don't you remember", "do you not remember", "have you forgotten",
+    "did you forget", "you forgot", "you seem to have forgotten",
+    "i keep saying", "i keep telling you",
 
     # Repetition exasperation
-    r"\b(how many times|again and again|over and over|repeatedly|keep (doing|making|forgetting|saying|telling))\b",
-    r"\b(every (single )?(time|day)|always (doing|making|forgetting))\b",
-    r"\b(still (doing|not|haven't|didn't|won't))\b",
-    r"\b(again\?|seriously\?|really\?!|come on!|ugh|argh|aargh)\b",
+    "how many times", "how many times do i have to",
+    "how many times have i", "how many times must i",
+    "again and again", "over and over", "time and time again",
+    "repeatedly", "constantly", "continuously", "nonstop", "non-stop",
+    "every single time", "every time i", "each and every time",
+    "always doing", "always making", "always forgetting",
+    "keep doing", "keep making", "keep forgetting",
+    "keep repeating", "keep saying", "keep adding",
+    "still doing", "still not", "still haven't", "still don't",
+    "yet again", "once again", "here we go again", "here we are again",
+    "not again", "oh not again",
 
-    # Direct corrections / negations with emphasis
-    r"\bno+,?\s+(no+,?\s+)*(that'?s? not|don'?t|stop|just)\b",
-    r"\b(that'?s? (not what i|wrong|incorrect|not right|not what i (said|meant|asked|wanted)))\b",
-    r"\b(not (like that|what i (want|need|asked|meant|said)))\b",
-    r"\b(you('re| are) (not listening|missing the point|still|again))\b",
+    # Emphatic corrections
+    "no no no", "no no", "nope nope",
+    "absolutely not", "definitely not", "certainly not",
+    "that's wrong", "completely wrong", "totally wrong", "all wrong",
+    "that's incorrect", "completely incorrect", "totally incorrect",
+    "that's not right", "that's not correct",
+    "that's not what i said", "that's not what i meant",
+    "that's not what i asked", "that's not what i wanted",
+    "that's not what i need", "that's not what i requested",
+    "not what i want", "not what i need", "not what i asked",
+    "not what i meant", "not what i said", "not what i specified",
+    "missed the point", "missing the point", "you're missing the point",
+    "you missed the point", "you got it wrong", "you're wrong",
+    "that's the opposite", "that's backwards",
+    "you're not listening", "you are not listening",
+    "you're not understanding", "you don't understand",
+    "you clearly don't understand", "clearly you don't understand",
+    "you clearly dont understand", "clearly you dont understand",
 
-    # Imperatives expressing frustration
-    r"\b(stop (doing|using|adding|making|always|it|that|this))\b",
-    r"\b(never (do|use|add|make) (this|that|it) again\b)",
-    r"\b(please (just |for once |stop |don'?t ))\b",
-    r"\b(just (do|don't|stop|use|follow|listen|read))\b",
+    # Imperatives of frustration
+    "stop it", "stop doing this", "stop doing that",
+    "stop adding", "stop using", "stop making",
+    "quit it", "quit doing this", "cut it out",
+    "enough already", "just stop", "please stop",
+    "never do this again", "never do that again",
+    "don't do this again", "don't do that again",
+    "please just", "for once", "just once",
+    "is it too much to ask",
 
     # Rhetorical questions
-    r"\b(why (do you|are you|would you|did you) (keep|always|still|again|even))\b",
-    r"\b(why (can'?t you|won'?t you|don'?t you))\b",
-    r"\b(how (hard|difficult) is (it|this))\b",
-    r"\b(is (it|this) (really|that) (hard|difficult|complicated))\b",
+    "why would you", "why did you even", "why are you still",
+    "why do you keep", "why do you always", "why do you still",
+    "why can't you", "why won't you", "why don't you",
+    "how hard is it", "how difficult is it",
+    "is it really that hard", "is it that difficult",
+    "is it too hard", "is it so hard",
+    "what part of", "which part of",
+    "do you even understand", "did you even read",
+    "are you even reading", "are you even listening",
+    "did you even look", "did you even check",
+    "do you even know",
 
-    # Explicit frustration words
-    r"\b(frustrated|frustrating|annoying|annoyed|irritating|irritated|fed up|tired of)\b",
-    r"\b(disappointed|unacceptable|ridiculous|absurd)\b",
+    # Explicit emotion words
+    "frustrated", "frustration", "frustrating",
+    "annoyed", "annoying", "annoyance",
+    "irritated", "irritating", "irritation",
+    "fed up", "sick of this", "sick and tired",
+    "tired of this", "tired of you",
+    "exasperated", "exasperation",
+    "disappointed", "disappointing", "disappointment",
+    "angry", "anger", "angered", "so angry",
+    "upset", "very upset", "quite upset",
+    "furious", "livid", "irate", "enraged",
+    "pissed", "pissed off",
+    "infuriated", "infuriating",
+    "displeased", "not pleased", "not happy",
+    "this is unacceptable", "unacceptable",
+    "this is unprofessional", "this is inexcusable",
 
     # Dismissal / giving up
-    r"\b(forget (it|this|that)|never ?mind|just drop (it|this))\b",
-    r"\b(i give up|this is useless|this isn'?t working)\b",
+    "forget it", "forget this", "forget that",
+    "nevermind", "never mind", "just forget it",
+    "i give up", "giving up on this",
+    "this is hopeless", "this is pointless",
+    "this is useless", "this isn't working",
+    "waste of time", "wasting my time",
+    "not worth it", "not worth my time",
+    "i'm done", "i am done", "done with this",
+    "scrap everything", "start over",
 
-    # ALL CAPS words (3+ chars = yelling signal, checked separately)
+    # Sarcasm signals
+    "oh great", "just great", "that's just great",
+    "oh perfect", "just perfect", "that's perfect",  # sarcastic
+    "oh wonderful", "oh fantastic", "oh brilliant",
+    "thanks for nothing", "great job",  # sarcastic
+    "wow thanks", "oh wow",
+
+    # Physical/emotional expressions
+    "ugh", "uggh", "ughhh", "ugggh",
+    "argh", "aargh", "aaarrgh", "aaargh",
+    "grr", "grrr",
+    "sigh", "*sigh*", "big sigh",
+    "facepalm", "*facepalm*",
+
+    # Emphasis / intensifiers in frustration context
+    "i literally", "literally just told",
+    "i clearly", "i obviously", "i specifically",
+    "i explicitly told", "i explicitly said",
+    "i repeatedly", "i have repeatedly",
+])
+
+# Pre-process to sorted list of phrases (longer first so multi-word matches first)
+_FRUSTRATION_PHRASES: list[str] = sorted(_FRUSTRATION_WORDS, key=len, reverse=True)
+
+# Layer 2: structural regex patterns for things the word list can't catch
+_FRUSTRATION_PATTERNS = [
+    # Repeated "no" (no no, no no no)
+    r"\bno[\s,!]+no\b",
+    # References to prior turns with any verb
+    r"\bi (already |just |literally |clearly |specifically )?(told|said|mentioned|asked|explained|showed|specified|noted|stated|wrote|typed)\b",
+    r"\b(as|like) i (said|mentioned|noted|explained|pointed out|specified|stated|asked)\b",
+    # How many times variations
+    r"\bhow many times\b",
+    # Repetition references
+    r"\b(again and again|over and over|time and time again|every single time)\b",
+    r"\b(keep (doing|making|adding|using|forgetting|repeating|saying|telling|ignoring))\b",
+    r"\b(you('re| are) (not listening|missing the point|still doing|doing it again|ignoring))\b",
+    # Rhetorical questions
+    r"\bwhy (do you|are you|would you|did you|can'?t you|won'?t you|don'?t you) (keep|always|still|even|just)\b",
+    r"\b(how (hard|difficult|complicated) is (it|this|that))\b",
+    r"\b(is (it|this|that) (really |so |that )?(hard|difficult|complicated|much to ask))\b",
+    r"\b(what part of .{1,40} don'?t you (understand|get))\b",
+    r"\b(did you (even |actually )?(read|look|check|see|understand))\b",
+    # Imperatives with emphasis
+    r"\b(stop (doing|using|adding|making|always|it|that|this|ignoring|changing|breaking))\b",
+    r"\b(never (do|use|add|make|change|touch|modify) (this|that|it|them|these) again)\b",
+    r"\b(please (just |for once |stop |don'?t |read |follow |listen ))\b",
+    # Dismissal phrases
+    r"\b(forget (it|this|that|everything|all of it))\b",
+    r"\b(i (give|gave) up|giving up)\b",
+    r"\b(waste of (my |our )?(time|effort))\b",
+    r"\b(i'?m done (with this|with you|trying))\b",
 ]
 
 _FRUSTRATION_RE = re.compile("|".join(_FRUSTRATION_PATTERNS), re.IGNORECASE)
 
-# ALL CAPS words of 3+ chars = frustration signal (e.g. "WHY", "STOP", "NO")
+# Layer 3: structural signals
 _CAPS_RE = re.compile(r'\b[A-Z]{3,}\b')
 
 
 def is_frustrated(text: str) -> bool:
-    """Return True if the message contains frustration signals."""
+    """Return True if the message contains any frustration signal."""
+    lower = text.lower()
+
+    # Layer 1: word/phrase list (fast substring check)
+    for phrase in _FRUSTRATION_PHRASES:
+        if phrase in lower:
+            return True
+
+    # Layer 2: structural regex
     if _FRUSTRATION_RE.search(text):
         return True
-    # 2+ all-caps words = yelling
-    caps_words = _CAPS_RE.findall(text)
-    if len(caps_words) >= 2:
+
+    # Layer 3: 2+ ALL CAPS words = yelling
+    if len(_CAPS_RE.findall(text)) >= 2:
         return True
-    # Repeated punctuation: ??? or !!! or ?!
+
+    # Layer 3: repeated punctuation (?? !! ?! !?)
     if re.search(r'[?!]{2,}', text):
         return True
+
     return False
 
 
