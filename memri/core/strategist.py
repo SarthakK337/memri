@@ -19,17 +19,74 @@ if TYPE_CHECKING:
     from memri.llm.provider import BaseLLMProvider
 
 # ── Frustration signals ───────────────────────────────────────────────────────
-# When a user expresses frustration referencing a past instruction, extract it
-# immediately as a permanent high-priority strategy.
+# Multi-layer detection: pattern matching catches clear signals fast;
+# LLM fallback catches subtle tone that patterns miss.
 
 _FRUSTRATION_PATTERNS = [
-    r"\b(what the fuck|wtf)\b",
-    r"\b(i told you|i already told|i said before|i mentioned before)\b",
-    r"\b(how many times|again and again|keep (doing|making|forgetting))\b",
-    r"\b(stop doing|don't do this again|never do this)\b",
-    r"\b(why (do you|are you) (keep|always|still))\b",
+    # Explicit profanity / strong language
+    r"\b(what the fuck|wtf|what the hell|what the heck|oh my god|omg|ffs|for fuck['s]* sake)\b",
+    r"\b(shit|damn it|dammit|jesus christ|holy shit)\b",
+
+    # References to prior instructions being ignored
+    r"\b(i (already |just |literally )?(told|said|mentioned|asked|explained|showed|specified))\b",
+    r"\b(i (said|mentioned) (this|that|it) before\b)",
+    r"\b(as i (said|mentioned|noted|explained|pointed out))\b",
+    r"\b(like i (said|told you|mentioned|asked))\b",
+    r"\b(we (already |just )?(went over|discussed|talked about|covered) this)\b",
+
+    # Repetition exasperation
+    r"\b(how many times|again and again|over and over|repeatedly|keep (doing|making|forgetting|saying|telling))\b",
+    r"\b(every (single )?(time|day)|always (doing|making|forgetting))\b",
+    r"\b(still (doing|not|haven't|didn't|won't))\b",
+    r"\b(again\?|seriously\?|really\?!|come on!|ugh|argh|aargh)\b",
+
+    # Direct corrections / negations with emphasis
+    r"\bno+,?\s+(no+,?\s+)*(that'?s? not|don'?t|stop|just)\b",
+    r"\b(that'?s? (not what i|wrong|incorrect|not right|not what i (said|meant|asked|wanted)))\b",
+    r"\b(not (like that|what i (want|need|asked|meant|said)))\b",
+    r"\b(you('re| are) (not listening|missing the point|still|again))\b",
+
+    # Imperatives expressing frustration
+    r"\b(stop (doing|using|adding|making|always|it|that|this))\b",
+    r"\b(never (do|use|add|make) (this|that|it) again\b)",
+    r"\b(please (just |for once |stop |don'?t ))\b",
+    r"\b(just (do|don't|stop|use|follow|listen|read))\b",
+
+    # Rhetorical questions
+    r"\b(why (do you|are you|would you|did you) (keep|always|still|again|even))\b",
+    r"\b(why (can'?t you|won'?t you|don'?t you))\b",
+    r"\b(how (hard|difficult) is (it|this))\b",
+    r"\b(is (it|this) (really|that) (hard|difficult|complicated))\b",
+
+    # Explicit frustration words
+    r"\b(frustrated|frustrating|annoying|annoyed|irritating|irritated|fed up|tired of)\b",
+    r"\b(disappointed|unacceptable|ridiculous|absurd)\b",
+
+    # Dismissal / giving up
+    r"\b(forget (it|this|that)|never ?mind|just drop (it|this))\b",
+    r"\b(i give up|this is useless|this isn'?t working)\b",
+
+    # ALL CAPS words (3+ chars = yelling signal, checked separately)
 ]
+
 _FRUSTRATION_RE = re.compile("|".join(_FRUSTRATION_PATTERNS), re.IGNORECASE)
+
+# ALL CAPS words of 3+ chars = frustration signal (e.g. "WHY", "STOP", "NO")
+_CAPS_RE = re.compile(r'\b[A-Z]{3,}\b')
+
+
+def is_frustrated(text: str) -> bool:
+    """Return True if the message contains frustration signals."""
+    if _FRUSTRATION_RE.search(text):
+        return True
+    # 2+ all-caps words = yelling
+    caps_words = _CAPS_RE.findall(text)
+    if len(caps_words) >= 2:
+        return True
+    # Repeated punctuation: ??? or !!! or ?!
+    if re.search(r'[?!]{2,}', text):
+        return True
+    return False
 
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
@@ -108,7 +165,7 @@ class StrategistAgent:
         """Check incoming message for frustration — extract strategy immediately if found."""
         if role != "user":
             return
-        if not _FRUSTRATION_RE.search(content):
+        if not is_frustrated(content):
             return
 
         # Get last 6 turns as context
