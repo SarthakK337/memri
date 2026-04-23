@@ -39,14 +39,27 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE TABLE IF NOT EXISTS observations (
-    id           TEXT PRIMARY KEY,
-    thread_id    TEXT NOT NULL REFERENCES threads(id),
-    content      TEXT NOT NULL,
-    token_count  INTEGER DEFAULT 0,
-    version      INTEGER DEFAULT 1,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    reflected_at TIMESTAMP
+    id               TEXT PRIMARY KEY,
+    thread_id        TEXT NOT NULL REFERENCES threads(id),
+    content          TEXT NOT NULL,
+    token_count      INTEGER DEFAULT 0,
+    version          INTEGER DEFAULT 1,
+    observation_type TEXT DEFAULT 'observation',
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reflected_at     TIMESTAMP
 );
+
+-- v0.2: strategies table for procedural memory (ReasoningBank-style)
+CREATE TABLE IF NOT EXISTS strategies (
+    id         TEXT PRIMARY KEY,
+    thread_id  TEXT NOT NULL REFERENCES threads(id),
+    content    TEXT NOT NULL,
+    priority   TEXT DEFAULT 'medium',
+    source     TEXT DEFAULT 'unknown',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_strategies_thread ON strategies(thread_id, priority);
 
 CREATE TABLE IF NOT EXISTS observation_embeddings (
     id             TEXT PRIMARY KEY,
@@ -115,6 +128,10 @@ class SQLiteStore(BaseStore):
     def _init_db(self) -> None:
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
+            # v0.2 migration: add observation_type column if not present
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(observations)").fetchall()]
+            if "observation_type" not in cols:
+                conn.execute("ALTER TABLE observations ADD COLUMN observation_type TEXT DEFAULT 'observation'")
 
     # ──────────────────────────── Threads ────────────────────────────
 
@@ -198,12 +215,15 @@ class SQLiteStore(BaseStore):
                 (_dt(None), message.thread_id),
             )
 
-    def get_messages(self, thread_id: str, unobserved_only: bool = False) -> list[Message]:
+    def get_messages(self, thread_id: str, unobserved_only: bool = False, limit: Optional[int] = None) -> list[Message]:
         query = "SELECT * FROM messages WHERE thread_id = ?"
         params: list = [thread_id]
         if unobserved_only:
             query += " AND observed = 0"
         query += " ORDER BY created_at ASC"
+        if limit:
+            query = f"SELECT * FROM ({query}) ORDER BY created_at DESC LIMIT {limit}"
+            query = f"SELECT * FROM ({query}) ORDER BY created_at ASC"
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [
@@ -332,6 +352,56 @@ class SQLiteStore(BaseStore):
             conn.execute("DELETE FROM observations    WHERE thread_id = ?", (thread_id,))
             conn.execute("DELETE FROM messages        WHERE thread_id = ?", (thread_id,))
             conn.execute("DELETE FROM threads         WHERE id = ?",        (thread_id,))
+
+    # ──────────────── v0.2: Strategy / Procedural Memory ─────────────
+
+    def add_observation(
+        self,
+        thread_id: str,
+        content: str,
+        observation_type: str = "observation",
+        token_count: int = 0,
+    ) -> None:
+        """Insert a single observation row (used by StrategistAgent for strategies)."""
+        with self._conn() as conn:
+            conn.execute("INSERT OR IGNORE INTO threads (id) VALUES (?)", (thread_id,))
+            conn.execute(
+                """INSERT INTO observations (id, thread_id, content, token_count, observation_type)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (str(uuid.uuid4()), thread_id, content, token_count or len(content.split()), observation_type),
+            )
+
+    def get_strategies(self, thread_id: str, limit: int = 50) -> list[dict]:
+        """Return strategy observations ordered by priority (critical first)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT id, content, created_at FROM observations
+                   WHERE thread_id = ? AND observation_type = 'strategy'
+                   ORDER BY
+                     CASE WHEN content LIKE '🔴%' THEN 0
+                          WHEN content LIKE '🟡%' THEN 1
+                          ELSE 2 END,
+                     created_at DESC
+                   LIMIT ?""",
+                (thread_id, limit),
+            ).fetchall()
+        return [{"id": r["id"], "content": r["content"]} for r in rows]
+
+    def get_all_strategies(self, limit: int = 100) -> list[dict]:
+        """Return all strategies across all threads (for global injection)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT id, thread_id, content, created_at FROM observations
+                   WHERE observation_type = 'strategy'
+                   ORDER BY
+                     CASE WHEN content LIKE '🔴%' THEN 0
+                          WHEN content LIKE '🟡%' THEN 1
+                          ELSE 2 END,
+                     created_at DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [{"id": r["id"], "thread_id": r["thread_id"], "content": r["content"]} for r in rows]
 
     # ──────────────────────── Embeddings ──────────────────────────────
 
