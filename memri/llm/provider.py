@@ -1,4 +1,4 @@
-"""LLM provider abstraction — Anthropic, Google Gemini, and any OpenAI-compatible endpoint."""
+"""LLM provider abstraction — Anthropic, Google Gemini, OpenAI-compatible, and passive (no-key) mode."""
 
 import asyncio
 from abc import ABC, abstractmethod
@@ -184,3 +184,20 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             output_tokens=response.usage.completion_tokens,
             model=response.model,
         )
+
+
+class PassiveProvider(BaseLLMProvider):
+    """No-API-key provider for users without LLM credentials.
+
+    LLM-dependent features (compression, reflection, strategy extraction)
+    are silently skipped. Storage, recall, search, and explicit notes still work.
+    """
+
+    async def complete(
+        self,
+        system_prompt: str,
+        user_message: str,
+        model: Optional[str] = None,
+        max_tokens: int = 8192,
+    ) -> LLMResponse:
+        raise NotImplementedError("passive mode: no LLM configured")

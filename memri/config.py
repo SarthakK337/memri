@@ -106,7 +106,12 @@ class MemriConfig:
             json.dump(data, f, indent=2)
 
     def get_llm_provider(self) -> BaseLLMProvider:
-        from .llm.provider import AnthropicProvider, GeminiProvider, OpenAICompatibleProvider
+        from .llm.provider import (
+            AnthropicProvider, GeminiProvider,
+            OpenAICompatibleProvider, PassiveProvider,
+        )
+        if self.llm_provider == "passive":
+            return PassiveProvider()
         if self.llm_provider == "anthropic":
             return AnthropicProvider(
                 api_key=self.llm_api_key,

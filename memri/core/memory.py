@@ -127,8 +127,11 @@ class MemriMemory:
         unobserved_tokens = sum(m.token_count for m in unobserved)
 
         if unobserved_tokens >= self.config.observe_threshold:
-            await self._run_observer(thread_id, unobserved)
-            return True
+            try:
+                await self._run_observer(thread_id, unobserved)
+                return True
+            except NotImplementedError:
+                pass  # passive mode — skip compression
 
         return False
 
@@ -219,15 +222,15 @@ class MemriMemory:
             if episodic:
                 parts.append("## Memory (Observations from past sessions)\n" + episodic)
 
-        # 3. Recent unobserved conversation
-        recent = self.store.get_recent_messages(
-            thread_id, max_tokens=self.config.observe_threshold
-        )
+        # 3. Recent messages — in passive mode show more since there's no compression
+        max_tok = self.config.observe_threshold
+        recent = self.store.get_recent_messages(thread_id, max_tokens=max_tok)
         if recent:
             formatted = "\n\n".join(
                 f"[{m.role.upper()}]\n{m.content}" for m in recent
             )
-            parts.append("## Recent Conversation\n" + formatted)
+            label = "## Recent Conversation" if parts else "## Conversation History"
+            parts.append(f"{label}\n" + formatted)
 
         return "\n\n".join(parts)
 

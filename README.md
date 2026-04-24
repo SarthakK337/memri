@@ -131,7 +131,46 @@ ANTHROPIC_API_KEY=...
 OPENAI_API_KEY=...
 ```
 
-Supported providers: `gemini`, `anthropic`, `openai`, `openai-compatible` (Groq, Ollama, Together, Mistral).
+Supported providers: `gemini`, `anthropic`, `openai`, `openai-compatible` (Groq, Ollama, Together, Mistral), `passive` (no key needed).
+
+### Don't have an API key?
+
+**Option 1 — Free Gemini API** *(recommended)*
+Google's Gemini 2.0 Flash has a permanently free tier — no credit card, no trial.
+Get a key in 1 minute: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+
+```bash
+# ~/.memri/.env
+GEMINI_API_KEY=your-key-here
+```
+```json
+// ~/.memri/config.json
+{ "llm_provider": "gemini", "llm_model": "gemini-2.0-flash" }
+```
+
+**Option 2 — Passive mode** *(zero setup)*
+No API key, no compression. memri stores sessions locally and returns recent context directly. `memri_recall`, `memri_store`, and `memri_search` all work.
+
+```json
+// ~/.memri/config.json
+{ "llm_provider": "passive" }
+```
+
+**Option 3 — Local model via Ollama** *(fully private)*
+Run any open-source model on your own hardware.
+
+```bash
+# Install from ollama.ai, then:
+ollama pull llama3
+```
+```json
+// ~/.memri/config.json
+{
+  "llm_provider": "openai-compatible",
+  "llm_base_url": "http://localhost:11434/v1",
+  "llm_model": "llama3"
+}
+```
 
 ---
 

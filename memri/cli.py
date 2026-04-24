@@ -60,10 +60,28 @@ def init(claude_code: bool, all_agents: bool, dry_run: bool):
         icon = "[green]ok[/green]" if success else "[red]err[/red]"
         console.print(f"{icon} Claude Code: {msg}")
 
-    console.print(
-        "\n[bold]Next:[/bold] Start the MCP server with [cyan]memri mcp-server[/cyan]\n"
-        "or open the dashboard with [cyan]memri dashboard[/cyan]\n"
-    )
+    # Guide users who have no API key
+    if not config.llm_api_key:
+        console.print(
+            "\n[yellow]No API key found.[/yellow] memri works in two modes:\n\n"
+            "  [bold]Option 1 — Free Gemini API[/bold] (recommended, takes 1 min)\n"
+            "    → [link=https://aistudio.google.com/apikey]https://aistudio.google.com/apikey[/link]\n"
+            "    → Add to [cyan]~/.memri/.env[/cyan]:  GEMINI_API_KEY=your-key\n"
+            "    → Update [cyan]~/.memri/config.json[/cyan]:  \"llm_provider\": \"gemini\"\n\n"
+            "  [bold]Option 2 — Passive mode[/bold] (no key needed)\n"
+            "    Stores your sessions locally, no compression.\n"
+            "    → Update [cyan]~/.memri/config.json[/cyan]:  \"llm_provider\": \"passive\"\n\n"
+            "  [bold]Option 3 — Local model via Ollama[/bold]\n"
+            "    → [link=https://ollama.ai]https://ollama.ai[/link]  then run: ollama pull llama3\n"
+            "    → Update config:  \"llm_provider\": \"openai-compatible\",\n"
+            "                      \"llm_base_url\": \"http://localhost:11434/v1\",\n"
+            "                      \"llm_model\": \"llama3\"\n"
+        )
+    else:
+        console.print(
+            "\n[bold]Next:[/bold] Start the MCP server with [cyan]memri mcp-server[/cyan]\n"
+            "or open the dashboard with [cyan]memri dashboard[/cyan]\n"
+        )
 
 
 # ────────────────────────────── status ─────────────────────────────────
