@@ -229,7 +229,7 @@ The raw baseline establishes the upper bound for memri's compressed-context path
 ## Development
 
 ```bash
-git clone https://github.com/your-org/memri
+git clone https://github.com/SarthakK337/memri
 cd memri
 pip install -e ".[dev,embeddings]"
 pytest
