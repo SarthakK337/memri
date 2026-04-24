@@ -131,7 +131,7 @@ ANTHROPIC_API_KEY=...
 OPENAI_API_KEY=...
 ```
 
-Supported providers: `gemini`, `anthropic`, `openai`, `openai-compatible` (Groq, Ollama, Together, Mistral), `passive` (no key needed).
+Supported providers: `anthropic`, `claude-code-auth`, `gemini`, `gemini-adc`, `openai`, `openai-compatible` (Groq, Ollama, Together, Mistral), `passive` (no key needed).
 
 ### Don't have an API key?
 
@@ -142,7 +142,15 @@ If you've ever run `claude` in your terminal, memri automatically detects your c
 memri init --claude-code   # auto-detects Claude login, configures instantly
 ```
 
-**Option 2 — Free Gemini API** *(takes 1 minute)*
+**Option 2 — Use your Google account** *(zero setup if you use gcloud)*
+If you've run `gcloud auth application-default login`, memri detects those credentials automatically. Works with any Google account.
+
+```bash
+gcloud auth application-default login   # one-time, if not already done
+memri init --claude-code                # auto-detects Google credentials
+```
+
+**Option 3 — Free Gemini API** *(takes 1 minute)*
 Google's Gemini 2.0 Flash has a permanently free tier — no credit card, no trial.
 Get a key in 1 minute: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 
@@ -155,15 +163,7 @@ GEMINI_API_KEY=your-key-here
 { "llm_provider": "gemini", "llm_model": "gemini-2.0-flash" }
 ```
 
-**Option 2 — Passive mode** *(zero setup)*
-No API key, no compression. memri stores sessions locally and returns recent context directly. `memri_recall`, `memri_store`, and `memri_search` all work.
-
-```json
-// ~/.memri/config.json
-{ "llm_provider": "passive" }
-```
-
-**Option 3 — Local model via Ollama** *(fully private)*
+**Option 4 — Local model via Ollama** *(fully private)*
 Run any open-source model on your own hardware.
 
 ```bash
@@ -178,6 +178,17 @@ ollama pull llama3
   "llm_model": "llama3"
 }
 ```
+
+**Option 5 — Passive mode** *(zero setup)*
+No API key, no compression. memri stores sessions locally and returns recent context directly. `memri_recall`, `memri_store`, and `memri_search` all work.
+
+```json
+// ~/.memri/config.json
+{ "llm_provider": "passive" }
+```
+
+> **What about OpenAI / ChatGPT?**
+> A ChatGPT subscription ($20/mo) does not include API access — OpenAI sells these separately. If you use GPT models, you need an OpenAI API key (`OPENAI_API_KEY`). The free options above (Gemini ADC or free Gemini API) are typically easier.
 
 ---
 

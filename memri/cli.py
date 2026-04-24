@@ -63,32 +63,41 @@ def init(claude_code: bool, all_agents: bool, dry_run: bool):
     # Auto-detect best available provider if none configured
     from pathlib import Path
     claude_creds = Path.home() / ".claude" / ".credentials.json"
+    gcloud_creds = (
+        Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
+    )
 
-    if not config.llm_api_key and config.llm_provider not in ("passive", "claude-code-auth"):
+    no_key = not config.llm_api_key
+    no_auth = config.llm_provider not in ("passive", "claude-code-auth", "gemini-adc")
+
+    if no_key and no_auth:
         if claude_creds.exists():
-            # Claude Code credentials found — use them automatically
             if not dry_run:
                 config.llm_provider = "claude-code-auth"
                 config.llm_model = "claude-haiku-4-5-20251001"
                 config.save()
             console.print(
-                "[green]ok[/green] LLM: using your Claude subscription "
-                "(claude-code-auth — no API key needed)"
+                "[green]ok[/green] LLM: Claude subscription detected — "
+                "using [cyan]claude-code-auth[/cyan] (no API key needed)"
+            )
+        elif gcloud_creds.exists():
+            if not dry_run:
+                config.llm_provider = "gemini-adc"
+                config.llm_model = "gemini-2.0-flash"
+                config.save()
+            console.print(
+                "[green]ok[/green] LLM: Google credentials detected — "
+                "using [cyan]gemini-adc[/cyan] (no API key needed)"
             )
         else:
             console.print(
-                "\n[yellow]No API key or Claude login found.[/yellow]\n\n"
-                "  [bold]Option 1 — Use your Claude subscription[/bold] (no API key)\n"
-                "    Already have Claude Code? Just run: [cyan]claude[/cyan]  to log in once.\n"
-                "    memri will automatically use those credentials.\n\n"
-                "  [bold]Option 2 — Free Gemini API[/bold] (takes 1 min)\n"
-                "    → [link=https://aistudio.google.com/apikey]https://aistudio.google.com/apikey[/link]\n"
-                "    Add [cyan]GEMINI_API_KEY=...[/cyan] to [cyan]~/.memri/.env[/cyan]\n\n"
-                "  [bold]Option 3 — Local model via Ollama[/bold] (fully private)\n"
-                "    → [link=https://ollama.ai]https://ollama.ai[/link]  then: ollama pull llama3\n"
-                "    Set [cyan]llm_provider: openai-compatible[/cyan] in [cyan]~/.memri/config.json[/cyan]\n\n"
-                "  [bold]Option 4 — Passive mode[/bold] (no LLM, zero setup)\n"
-                "    Set [cyan]llm_provider: passive[/cyan] in [cyan]~/.memri/config.json[/cyan]\n"
+                "\n[yellow]No API key detected.[/yellow] "
+                "Run [cyan]memri auth login[/cyan] to connect your existing account, or:\n\n"
+                "  [bold]Claude subscription[/bold]  →  run [cyan]claude[/cyan] once to log in\n"
+                "  [bold]Google account[/bold]       →  run [cyan]gcloud auth application-default login[/cyan]\n"
+                "  [bold]Free Gemini API key[/bold]  →  [link=https://aistudio.google.com/apikey]aistudio.google.com/apikey[/link]  (30 seconds, no card)\n"
+                "  [bold]Ollama (local)[/bold]       →  [link=https://ollama.ai]ollama.ai[/link]  then set [cyan]llm_provider: openai-compatible[/cyan]\n"
+                "  [bold]Passive mode[/bold]         →  set [cyan]llm_provider: passive[/cyan] in config\n"
             )
     else:
         console.print(

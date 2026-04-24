@@ -108,12 +108,14 @@ class MemriConfig:
     def get_llm_provider(self) -> BaseLLMProvider:
         from .llm.provider import (
             AnthropicProvider, ClaudeCodeAuthProvider, GeminiProvider,
-            OpenAICompatibleProvider, PassiveProvider,
+            GeminiADCProvider, OpenAICompatibleProvider, PassiveProvider,
         )
         if self.llm_provider == "passive":
             return PassiveProvider()
         if self.llm_provider == "claude-code-auth":
             return ClaudeCodeAuthProvider(default_model=self.llm_model)
+        if self.llm_provider == "gemini-adc":
+            return GeminiADCProvider(default_model=self.llm_model)
         if self.llm_provider == "anthropic":
             return AnthropicProvider(
                 api_key=self.llm_api_key,

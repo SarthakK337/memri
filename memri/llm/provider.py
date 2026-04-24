@@ -287,6 +287,74 @@ class ClaudeCodeAuthProvider(BaseLLMProvider):
         )
 
 
+class GeminiADCProvider(BaseLLMProvider):
+    """Uses Google Application Default Credentials — no API key needed.
+
+    Works for any user with a Google account who has run:
+        gcloud auth application-default login
+
+    gcloud is free to install: https://cloud.google.com/sdk/install
+    """
+
+    def __init__(self, default_model: str = "gemini-2.0-flash"):
+        try:
+            import google.auth
+            import google.auth.transport.requests
+            self.credentials, _ = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/generative-language"]
+            )
+            # Refresh immediately so we catch auth errors at init, not at first call
+            req = google.auth.transport.requests.Request()
+            if not self.credentials.valid:
+                self.credentials.refresh(req)
+        except Exception as e:
+            raise RuntimeError(
+                "Google Application Default Credentials not found.\n"
+                "Run once:  gcloud auth application-default login\n"
+                "Install gcloud:  https://cloud.google.com/sdk/install"
+            ) from e
+
+        try:
+            from google import genai  # noqa: PLC0415
+            self.client = genai.Client(credentials=self.credentials)
+        except ImportError as e:
+            raise ImportError("google-genai not installed. Run: pip install google-genai") from e
+
+        self.default_model = default_model
+
+    async def complete(
+        self,
+        system_prompt: str,
+        user_message: str,
+        model: Optional[str] = None,
+        max_tokens: int = 8192,
+    ) -> LLMResponse:
+        from google.genai import types as gtypes  # noqa: PLC0415
+
+        # Refresh token if about to expire
+        import google.auth.transport.requests
+        if not self.credentials.valid:
+            self.credentials.refresh(google.auth.transport.requests.Request())
+
+        async def _call():
+            return await self.client.aio.models.generate_content(
+                model=model or self.default_model,
+                contents=user_message,
+                config=gtypes.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=max_tokens,
+                ),
+            )
+
+        response = await _with_retry(_call)
+        return LLMResponse(
+            content=response.text or "",
+            input_tokens=response.usage_metadata.prompt_token_count or 0,
+            output_tokens=response.usage_metadata.candidates_token_count or 0,
+            model=model or self.default_model,
+        )
+
+
 class PassiveProvider(BaseLLMProvider):
     """No-API-key provider for users without LLM credentials.
 
