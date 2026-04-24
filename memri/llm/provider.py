@@ -186,78 +186,30 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         )
 
 
-class ClaudeCodeAuthProvider(BaseLLMProvider):
-    """Uses Claude Code's existing OAuth session — no API key needed.
+class ClaudeCodeSubprocessProvider(BaseLLMProvider):
+    """Uses the Claude Code CLI as a subprocess — no API key needed.
 
-    Any user who has run `claude` at least once already has credentials
-    stored at ~/.claude/.credentials.json. This provider reuses them,
-    so Claude Pro / Max / Team subscribers get full LLM-powered compression
-    without a separate API key.
+    Works for any user with the `claude` CLI installed and authenticated
+    (Claude Pro / Max / Team / Free subscription). The CLI is invoked with
+    `claude -p <prompt>` which runs non-interactively using the existing
+    OAuth session.
+
+    Note: this requires the *CLI* (`claude` in PATH), not just the VS Code
+    extension. Install from https://claude.ai/code if not present.
     """
 
-    _CREDS_PATH = None  # resolved lazily
-
     def __init__(self, default_model: str = "claude-haiku-4-5-20251001"):
-        import json
-        from datetime import datetime, timezone
-        from pathlib import Path
-
-        creds_file = Path.home() / ".claude" / ".credentials.json"
-        if not creds_file.exists():
+        import shutil
+        self._claude_bin = shutil.which("claude")
+        if not self._claude_bin:
             raise RuntimeError(
-                "Claude Code credentials not found.\n"
-                "Run 'claude' once to log in, then restart memri."
+                "Claude Code CLI not found in PATH.\n"
+                "Install from https://claude.ai/code, run 'claude' once to log in,\n"
+                "then restart memri.\n"
+                "If you only have the VS Code extension (not the CLI), use the free\n"
+                "Gemini API instead: run 'memri auth login' to set it up."
             )
-        with open(creds_file) as f:
-            raw = json.load(f)
-
-        oauth = raw.get("claudeAiOauth", {})
-        self._access_token: str = oauth.get("accessToken", "")
-        self._refresh_token: str = oauth.get("refreshToken", "")
-        expires_raw = oauth.get("expiresAt")
-        self._expires_at = (
-            datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
-            if expires_raw else None
-        )
-        self._creds_file = creds_file
         self.default_model = default_model
-        self.subscription_type = oauth.get("subscriptionType", "unknown")
-
-    def _token(self) -> str:
-        """Return current access token, refreshing if expired."""
-        from datetime import datetime, timezone
-        if self._expires_at and datetime.now(timezone.utc) >= self._expires_at:
-            self._refresh()
-        return self._access_token
-
-    def _refresh(self) -> None:
-        """Synchronous token refresh via Anthropic OAuth endpoint."""
-        import json
-        import urllib.request
-        body = json.dumps({
-            "grant_type": "refresh_token",
-            "refresh_token": self._refresh_token,
-        }).encode()
-        req = urllib.request.Request(
-            "https://claude.ai/api/auth/oauth/token",
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-        self._access_token = data["access_token"]
-        # Persist refreshed token back to credentials file
-        with open(self._creds_file) as f:
-            raw = json.load(f)
-        raw.setdefault("claudeAiOauth", {})["accessToken"] = self._access_token
-        if "expires_in" in data:
-            from datetime import datetime, timedelta, timezone
-            exp = datetime.now(timezone.utc) + timedelta(seconds=data["expires_in"])
-            raw["claudeAiOauth"]["expiresAt"] = exp.isoformat()
-            self._expires_at = exp
-        with open(self._creds_file, "w") as f:
-            json.dump(raw, f, indent=2)
 
     async def complete(
         self,
@@ -266,25 +218,42 @@ class ClaudeCodeAuthProvider(BaseLLMProvider):
         model: Optional[str] = None,
         max_tokens: int = 8192,
     ) -> LLMResponse:
-        import anthropic  # noqa: PLC0415
+        import asyncio  # noqa: PLC0415
 
-        client = anthropic.AsyncAnthropic(auth_token=self._token())
+        full_prompt = f"{system_prompt}\n\n{user_message}" if system_prompt else user_message
+        cmd = [self._claude_bin, "-p", full_prompt, "--output-format", "text"]
 
-        async def _call():
-            return await client.messages.create(
-                model=model or self.default_model,
-                max_tokens=max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_message}],
-            )
-
-        response = await _with_retry(_call)
-        return LLMResponse(
-            content=response.content[0].text,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            model=response.model,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=180)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError("claude CLI timed out after 180s")
+
+        if proc.returncode != 0:
+            err = stderr.decode(errors="replace")[:300]
+            raise RuntimeError(f"claude CLI exited {proc.returncode}: {err}")
+
+        content = stdout.decode(errors="replace").strip()
+        # Rough token estimates (no exact count available from CLI)
+        input_tokens = len(full_prompt) // 4
+        output_tokens = len(content) // 4
+
+        return LLMResponse(
+            content=content,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            model=model or self.default_model,
+        )
+
+
+# Keep the old name as an alias so existing configs with llm_provider="claude-code-auth"
+# continue to work — they'll get a clear error message if the CLI isn't installed.
+ClaudeCodeAuthProvider = ClaudeCodeSubprocessProvider
 
 
 class GeminiADCProvider(BaseLLMProvider):

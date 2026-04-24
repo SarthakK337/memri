@@ -61,24 +61,25 @@ def init(claude_code: bool, all_agents: bool, dry_run: bool):
         console.print(f"{icon} Claude Code: {msg}")
 
     # Auto-detect best available provider if none configured
+    import shutil
     from pathlib import Path
-    claude_creds = Path.home() / ".claude" / ".credentials.json"
+    claude_bin = shutil.which("claude")
     gcloud_creds = (
         Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
     )
 
     no_key = not config.llm_api_key
-    no_auth = config.llm_provider not in ("passive", "claude-code-auth", "gemini-adc")
+    no_auth = config.llm_provider not in ("passive", "claude-code", "claude-code-auth", "gemini-adc")
 
     if no_key and no_auth:
-        if claude_creds.exists():
+        if claude_bin:
             if not dry_run:
-                config.llm_provider = "claude-code-auth"
+                config.llm_provider = "claude-code"
                 config.llm_model = "claude-haiku-4-5-20251001"
                 config.save()
             console.print(
-                "[green]ok[/green] LLM: Claude subscription detected — "
-                "using [cyan]claude-code-auth[/cyan] (no API key needed)"
+                "[green]ok[/green] LLM: Claude Code CLI detected — "
+                "using [cyan]claude-code[/cyan] (no API key needed)"
             )
         elif gcloud_creds.exists():
             if not dry_run:
@@ -92,11 +93,12 @@ def init(claude_code: bool, all_agents: bool, dry_run: bool):
         else:
             console.print(
                 "\n[yellow]No API key detected.[/yellow] "
-                "Run [cyan]memri auth login[/cyan] to connect your existing account, or:\n\n"
-                "  [bold]Claude subscription[/bold]  →  run [cyan]claude[/cyan] once to log in\n"
+                "Run [cyan]memri auth login[/cyan] to set one up, or:\n\n"
+                "  [bold]Claude CLI[/bold]           →  install from claude.ai/code, "
+                "run [cyan]claude[/cyan] once to log in\n"
                 "  [bold]Google account[/bold]       →  run [cyan]gcloud auth application-default login[/cyan]\n"
-                "  [bold]Free Gemini API key[/bold]  →  [link=https://aistudio.google.com/apikey]aistudio.google.com/apikey[/link]  (30 seconds, no card)\n"
-                "  [bold]Ollama (local)[/bold]       →  [link=https://ollama.ai]ollama.ai[/link]  then set [cyan]llm_provider: openai-compatible[/cyan]\n"
+                "  [bold]Free Gemini API key[/bold]  →  aistudio.google.com/apikey  (30 seconds, no card)\n"
+                "  [bold]Ollama (local)[/bold]       →  ollama.ai  then set [cyan]llm_provider: openai-compatible[/cyan]\n"
                 "  [bold]Passive mode[/bold]         →  set [cyan]llm_provider: passive[/cyan] in config\n"
             )
     else:
@@ -386,23 +388,32 @@ def auth_login(provider: Optional[str]):
     Auto-detects the best option: Claude subscription, Google account,
     free Gemini API, or manual API key entry.
     """
+    import shutil
     from pathlib import Path
     from .config import MemriConfig
 
     config = MemriConfig.load()
 
-    claude_creds = Path.home() / ".claude" / ".credentials.json"
+    claude_bin = shutil.which("claude")
     gcloud_creds = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
 
-    if provider in (None, "claude") and claude_creds.exists():
-        config.llm_provider = "claude-code-auth"
+    if provider in (None, "claude") and claude_bin:
+        config.llm_provider = "claude-code"
         config.llm_model = "claude-haiku-4-5-20251001"
         config.save()
         console.print(
-            "[green]ok[/green] Configured [cyan]claude-code-auth[/cyan] — "
-            "using your Claude subscription (no API key needed)"
+            "[green]ok[/green] Configured [cyan]claude-code[/cyan] — "
+            "using Claude Code CLI (no API key needed)"
         )
         return
+
+    if provider in (None, "claude") and not claude_bin:
+        console.print(
+            "[yellow]warn[/yellow] Claude Code CLI not found in PATH.\n"
+            "       The CLI is separate from the VS Code extension.\n"
+            "       Install from claude.ai/code, run 'claude' once, then re-run this command.\n"
+            "       Falling back to other options...\n"
+        )
 
     if provider in (None, "gemini") and gcloud_creds.exists():
         config.llm_provider = "gemini-adc"
