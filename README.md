@@ -14,12 +14,13 @@ Observational memory for coding agents (Claude Code, Cursor, Codex) — a standa
 
 Every time your conversation grows large, memri silently compresses it into dense, timestamped observations and injects them at the start of your next session. Your AI coding assistant remembers what you worked on — without burning tokens re-reading the full history.
 
-Two background agents run as you code:
+Three background agents run as you code:
 
 - **Observer** — when your conversation exceeds 30K tokens, compresses it into observations (5–40× compression ratio)
 - **Reflector** — when observations exceed 40K tokens, garbage-collects stale or redundant ones
+- **Strategist** *(v0.2)* — extracts generalizable reasoning strategies from session trajectories; detects user frustration in real-time and stores recovery tactics as permanent procedural memory
 
-The result: a compact, prompt-cacheable memory block at the top of every session.
+The result: a compact, prompt-cacheable memory block at the top of every session — plus a growing library of *how to work better* with this specific user.
 
 ---
 
@@ -121,6 +122,7 @@ memri mcp-server --model gpt-4o-mini
 | `memri_status` | Show token savings, cost savings, session stats |
 | `memri_forget` | Delete all memories for a thread |
 | `memri_ingest` | Manually ingest a session file |
+| `memri_distill` | *(v0.2)* Extract generalizable strategies from this session |
 
 Add this to your Claude Code system prompt to activate auto-recall:
 
@@ -167,9 +169,11 @@ memri config                # Show current config
 | Install | `pip install` | framework lock-in | — |
 | Coding agents | Claude Code, Cursor, Codex | Mastra agents only | any |
 | Cross-session search | yes (semantic) | no | no |
+| Procedural memory | yes (v0.2) | no | no |
+| Frustration detection | yes (v0.2) | no | no |
 | Dashboard | yes | no | no |
 | Token compression | 5–40x | 5–40x | 1x |
-| LongMemEval-S accuracy | 80%+ | 80%+ | 80%+ |
+| LongMemEval-S (raw baseline) | 70.6% | — | 70.6% |
 
 ---
 
@@ -179,16 +183,20 @@ memri config                # Show current config
 Your conversation
       |
       v
-  [Observer]  — triggers at 30K tokens
-      |          compresses turns → observations
+  [Observer]    — triggers at 30K tokens
+      |            compresses turns → episodic observations
+      |
+  [Strategist]  — on every message
+      |            detects frustration → 🔴 CRITICAL strategy
+      |            on session end → distills trajectory → 🟡/🔵 strategies
       v
- [SQLiteStore] — stores observations + embeddings
+ [SQLiteStore]  — stores observations + strategies + embeddings
       |
       v
-  [Reflector] — triggers at 40K observations tokens
-      |          removes stale/redundant observations
+  [Reflector]   — triggers at 40K observation tokens
+      |            removes stale/redundant episodic observations
       v
- [get_context()] — returns compact memory block
+ [get_context()] — prepends strategies, then episodic observations
       |
       v
  Injected at top of next session
@@ -200,15 +208,21 @@ Storage: `~/.memri/memory.db` (SQLite, 5 tables).
 
 ## Benchmarks
 
-Validated on [LongMemEval-S](https://arxiv.org/abs/2410.10813) — 500 QA pairs across 6 question types testing AI assistant memory:
+Validated on [LongMemEval-S](https://arxiv.org/abs/2410.10813) — 500 QA pairs across 6 question types testing AI assistant memory.
+
+Raw baseline (full context → Gemini 2.5 Flash, no compression):
 
 | Question type | Accuracy |
 |---|---|
-| single-session-user | 97%+ |
-| single-session-assistant | 94%+ |
-| knowledge-update | 84%+ |
-| multi-session | 50%+ |
-| **Overall** | **80%+** |
+| single-session-user | ~95% |
+| single-session-assistant | ~90% |
+| knowledge-update | ~82% |
+| temporal-reasoning | ~65% |
+| preference | ~55% |
+| multi-session | ~50% |
+| **Overall** | **70.6%** |
+
+The raw baseline establishes the upper bound for memri's compressed-context path. Smriti integration (planned) targets 80%+.
 
 ---
 
