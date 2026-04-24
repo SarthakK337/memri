@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, v0.2]
+    branches: [main, "v0.2"]
   pull_request:
     branches: [main]
 
@@ -24,16 +24,8 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
-      - name: Debug imports
-        run: |
-          python -c "from memri.config import MemriConfig; print('config OK')"
-          python -c "from memri.storage.sqlite_store import SQLiteStore; print('store OK')"
-          python -c "from memri.core.memory import MemriMemory; print('memory OK')"
-        env:
-          ANTHROPIC_API_KEY: test-fake-key-for-ci
-
       - name: Run tests
-        run: pytest tests/ -v --tb=long --ignore=tests/benchmarks
+        run: pytest tests/ -v --tb=short --ignore=tests/benchmarks
         env:
           ANTHROPIC_API_KEY: test-fake-key-for-ci
           GEMINI_API_KEY: test-fake-key-for-ci
