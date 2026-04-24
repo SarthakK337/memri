@@ -1,26 +1,31 @@
 # memri
 
-**Mastra-level memory intelligence in a `pip install`.**
-
-Observational memory for coding agents (Claude Code, Cursor, Codex) — a standalone Python package and MCP server that keeps your AI assistant from forgetting context across sessions.
+**Persistent memory for AI coding agents — in a `pip install`.**
 
 [![PyPI](https://img.shields.io/pypi/v/memri)](https://pypi.org/project/memri/)
 [![Python](https://img.shields.io/pypi/pyversions/memri)](https://pypi.org/project/memri/)
+[![CI](https://github.com/SarthakK337/memri/actions/workflows/ci.yml/badge.svg)](https://github.com/SarthakK337/memri/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
-## What it does
+## The problem
 
-Every time your conversation grows large, memri silently compresses it into dense, timestamped observations and injects them at the start of your next session. Your AI coding assistant remembers what you worked on — without burning tokens re-reading the full history.
+Every time you start a new session with Claude Code, Cursor, or Codex — it forgets everything. The architecture you designed last week. The library you chose. The bug you already fixed. You repeat yourself. The agent repeats mistakes.
 
-Three background agents run as you code:
+**memri fixes this.** It runs silently alongside your coding agent, compresses your conversation history into dense observations, and injects them at the start of every new session. Your agent picks up exactly where it left off.
 
-- **Observer** — when your conversation exceeds 30K tokens, compresses it into observations (5–40× compression ratio)
-- **Reflector** — when observations exceed 40K tokens, garbage-collects stale or redundant ones
-- **Strategist** *(v0.2)* — extracts generalizable reasoning strategies from session trajectories; detects user frustration in real-time and stores recovery tactics as permanent procedural memory
+---
 
-The result: a compact, prompt-cacheable memory block at the top of every session — plus a growing library of *how to work better* with this specific user.
+## Features
+
+- **Automatic compression** — conversations beyond 30K tokens are compressed 5–40× into timestamped observations
+- **Cross-session recall** — observations are injected at the start of every new session, no setup needed per conversation
+- **Semantic search** — find anything from past sessions with natural language (`memri_search "auth pattern we chose"`)
+- **Procedural memory** *(v0.2)* — learns *how to work better with you* over time, not just *what happened*
+- **Frustration detection** *(v0.2)* — detects when you're frustrated and permanently stores what went wrong as a high-priority strategy
+- **Works with any LLM** — Anthropic, Gemini, OpenAI, or any OpenAI-compatible endpoint
+- **100% local** — SQLite database on your machine, no cloud, no accounts
 
 ---
 
@@ -30,7 +35,7 @@ The result: a compact, prompt-cacheable memory block at the top of every session
 pip install memri
 ```
 
-For semantic search across past sessions:
+With semantic search:
 
 ```bash
 pip install "memri[embeddings]"
@@ -40,50 +45,74 @@ pip install "memri[embeddings]"
 
 ## Quick start
 
-### 1. Initialize
+One command wires memri into Claude Code:
 
-```bash
-memri init
-```
-
-This creates `~/.memri/config.json` and prompts for your API key. Supports Gemini, Anthropic, and any OpenAI-compatible endpoint.
-
-### 2. Connect to your coding agent
-
-**Claude Code:**
 ```bash
 memri init --claude-code
 ```
-Adds memri as an MCP server to your Claude Code config automatically.
 
-**Cursor / VS Code:**
-```bash
-memri init --cursor
+This does three things automatically:
+1. Creates `~/.memri/memri.db` (local SQLite database)
+2. Registers memri as an MCP server in Claude Code's `settings.json`
+3. Writes the recall instruction to `~/.claude/CLAUDE.md`
+
+That's it. Open a new Claude Code session — memri starts working.
+
+---
+
+## How it works
+
+```
+Your conversation
+      │
+      ▼
+  [Observer]      triggers at 30K tokens
+      │           compresses turns → timestamped observations (5–40× smaller)
+      │
+  [Strategist]    runs on every message                           (v0.2)
+      │           detects frustration → 🔴 stores "what went wrong"
+      │           end of session → distills "what worked" → 🟡🔵 strategies
+      ▼
+ [SQLiteStore]    ~/.memri/memri.db  (observations + strategies + embeddings)
+      │
+      ▼
+  [Reflector]     triggers at 40K observation tokens
+      │           garbage-collects stale / redundant observations
+      ▼
+ [get_context()]  prepends strategies → then observations → then recent turns
+      │
+      ▼
+ Injected at the top of your next session
 ```
 
-**Manual MCP config:**
-```json
-{
-  "mcpServers": {
-    "memri": {
-      "command": "memri",
-      "args": ["mcp-server"]
-    }
-  }
-}
-```
+**Two types of memory:**
 
-### 3. Start the MCP server
+| Type | What it stores | Example |
+|------|---------------|---------|
+| Episodic | What happened in past sessions | *"User chose PostgreSQL over SQLite on 2026-04-10"* |
+| Procedural | How to work better with this user | *"Always confirm before running destructive commands"* |
 
-```bash
-memri mcp-server
-```
+---
+
+## MCP tools
+
+memri exposes 7 tools to your coding agent via MCP:
+
+| Tool | When to call |
+|------|-------------|
+| `memri_recall` | Start of every session — restores compressed context |
+| `memri_store` | User shares something important to remember |
+| `memri_search` | Looking for context from a different project or thread |
+| `memri_ingest` | Manually process a session into memory |
+| `memri_distill` | End of session — extract generalizable strategies |
+| `memri_status` | Check token savings, cost, session stats |
+| `memri_forget` | Delete memories for a specific thread |
 
 ---
 
 ## Configuration
 
-Config lives at `~/.memri/config.json`:
+Config at `~/.memri/config.json`:
 
 ```json
 {
@@ -94,151 +123,84 @@ Config lives at `~/.memri/config.json`:
 }
 ```
 
-API keys in `~/.memri/.env`:
+API keys at `~/.memri/.env`:
 
-```
+```bash
 GEMINI_API_KEY=...
 ANTHROPIC_API_KEY=...
 OPENAI_API_KEY=...
 ```
 
-Override model via env or CLI:
+Supported providers: `gemini`, `anthropic`, `openai`, `openai-compatible` (Groq, Ollama, Together, Mistral).
+
+---
+
+## CLI
 
 ```bash
-memri mcp-server --model gemini-2.5-flash
-memri mcp-server --model claude-haiku-4-5-20251001
-memri mcp-server --model gpt-4o-mini
+memri init --claude-code   # First-time setup (one command)
+memri status               # Token savings, cost, session count
+memri watch                # Auto-ingest new sessions in real time
+memri ingest               # Ingest existing session history
+memri observe              # Manually run the Observer on all threads
+memri embed                # Build semantic search index
+memri dashboard            # Web dashboard at http://localhost:8050
+memri config               # View / edit config
 ```
-
----
-
-## MCP Tools
-
-| Tool | What it does |
-|------|-------------|
-| `memri_recall` | Restore compressed context at session start |
-| `memri_store` | Explicitly save a note or decision |
-| `memri_search` | Semantic search across all past sessions |
-| `memri_status` | Show token savings, cost savings, session stats |
-| `memri_forget` | Delete all memories for a thread |
-| `memri_ingest` | Manually ingest a session file |
-| `memri_distill` | *(v0.2)* Extract generalizable strategies from this session |
-
-Add this to your Claude Code system prompt to activate auto-recall:
-
-```
-At the start of each session, call memri_recall to restore context.
-After significant decisions or discoveries, call memri_store to save them.
-```
-
----
-
-## Dashboard
-
-```bash
-memri dashboard
-# Open http://localhost:8050
-```
-
-Shows: total tokens saved, cost savings per model, observation counts, and session history.
-
----
-
-## CLI reference
-
-```bash
-memri init                  # First-time setup
-memri init --claude-code    # Setup + wire into Claude Code
-memri status                # Quick stats
-memri mcp-server            # Start MCP server
-memri dashboard             # Start web dashboard
-memri observe <thread_id>   # Manually trigger Observer
-memri embed                 # Build/update semantic search index
-memri watch                 # Start file watcher (auto-ingest sessions)
-memri ingest <file>         # Ingest a session JSONL file
-memri config                # Show current config
-```
-
----
-
-## How it compares
-
-| | memri | Mastra OM | Full context |
-|---|---|---|---|
-| Language | Python | TypeScript | any |
-| Install | `pip install` | framework lock-in | — |
-| Coding agents | Claude Code, Cursor, Codex | Mastra agents only | any |
-| Cross-session search | yes (semantic) | no | no |
-| Procedural memory | yes (v0.2) | no | no |
-| Frustration detection | yes (v0.2) | no | no |
-| Dashboard | yes | no | no |
-| Token compression | 5–40x | 5–40x | 1x |
-| LongMemEval-S (raw baseline) | 70.6% | — | 70.6% |
-
----
-
-## Architecture
-
-```
-Your conversation
-      |
-      v
-  [Observer]    — triggers at 30K tokens
-      |            compresses turns → episodic observations
-      |
-  [Strategist]  — on every message
-      |            detects frustration → 🔴 CRITICAL strategy
-      |            on session end → distills trajectory → 🟡/🔵 strategies
-      v
- [SQLiteStore]  — stores observations + strategies + embeddings
-      |
-      v
-  [Reflector]   — triggers at 40K observation tokens
-      |            removes stale/redundant episodic observations
-      v
- [get_context()] — prepends strategies, then episodic observations
-      |
-      v
- Injected at top of next session
-```
-
-Storage: `~/.memri/memory.db` (SQLite, 5 tables).
 
 ---
 
 ## Benchmarks
 
-Validated on [LongMemEval-S](https://arxiv.org/abs/2410.10813) — 500 QA pairs across 6 question types testing AI assistant memory.
+Evaluated on [LongMemEval-S](https://arxiv.org/abs/2410.10813) — 500 QA pairs across 6 question types designed to test AI assistant long-term memory.
 
-Raw baseline (full context → Gemini 2.5 Flash, no compression):
+**Raw baseline** (full context → Gemini 2.5 Flash):
 
-| Question type | Accuracy |
+| Question type | Score |
 |---|---|
-| single-session-user | ~95% |
-| single-session-assistant | ~90% |
-| knowledge-update | ~82% |
-| temporal-reasoning | ~65% |
-| preference | ~55% |
-| multi-session | ~50% |
+| Single-session (user) | ~95% |
+| Single-session (assistant) | ~90% |
+| Knowledge update | ~82% |
+| Temporal reasoning | ~65% |
+| Preference | ~55% |
+| Multi-session | ~50% |
 | **Overall** | **70.6%** |
 
-The raw baseline establishes the upper bound for memri's compressed-context path. Smriti integration (planned) targets 80%+.
+This is the ceiling for the compressed-context path. Smriti integration (in progress) targets **80%+**.
+
+---
+
+## Comparison
+
+| | **memri** | Mastra OM | mem0 | Full context |
+|---|---|---|---|---|
+| Language | Python | TypeScript | Python | — |
+| Install | `pip install` | framework lock-in | `pip install` | — |
+| Works with | Claude Code, Cursor, Codex | Mastra only | any | any |
+| Storage | local SQLite | cloud | cloud | none |
+| Procedural memory | ✅ v0.2 | ❌ | ❌ | ❌ |
+| Frustration detection | ✅ v0.2 | ❌ | ❌ | ❌ |
+| Semantic search | ✅ local | ❌ | ✅ cloud | ❌ |
+| Dashboard | ✅ | ❌ | ✅ | ❌ |
+| Token compression | 5–40× | 5–40× | varies | 1× |
+| **Privacy** | **100% local** | cloud | cloud | local |
 
 ---
 
 ## Privacy
 
-**Your data stays on your machine.**
+**Your data never leaves your machine.**
 
-- All conversation history and observations are stored in `~/.memri/memri.db` — a local SQLite file only you can access. Nothing is sent to memri servers (there are none).
-- The only external calls memri makes are to your configured LLM provider (Anthropic, Gemini, or OpenAI) to run the Observer and Reflector agents. This is the same provider you're already using for your coding agent.
-- You can inspect, export, or delete everything at any time:
-  ```bash
-  memri status          # see what's stored
-  memri forget <thread> # delete a specific thread
-  rm ~/.memri/memri.db  # delete everything
-  ```
-- API keys are read from environment variables and never stored in the database.
+- Conversation history and observations live in `~/.memri/memri.db` — a local SQLite file only you can read.
+- memri has no servers, no telemetry, no accounts.
+- The only external calls are to your LLM provider (the same one your coding agent already uses) to run compression.
+- API keys are read from environment variables and never written to the database.
+
+```bash
+memri status               # see exactly what's stored
+memri forget <thread_id>   # delete a specific thread
+rm ~/.memri/memri.db       # delete everything
+```
 
 ---
 
@@ -251,8 +213,10 @@ pip install -e ".[dev,embeddings]"
 pytest
 ```
 
+Contributions welcome. Open an issue before starting large changes.
+
 ---
 
 ## License
 
-MIT
+MIT © 2026
