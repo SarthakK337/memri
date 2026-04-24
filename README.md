@@ -135,7 +135,14 @@ Supported providers: `gemini`, `anthropic`, `openai`, `openai-compatible` (Groq,
 
 ### Don't have an API key?
 
-**Option 1 — Free Gemini API** *(recommended)*
+**Option 1 — Use your Claude subscription** *(zero setup if you already use Claude Code)*
+If you've ever run `claude` in your terminal, memri automatically detects your credentials and uses them. No API key needed — your Claude Pro / Max / Team subscription covers it.
+
+```bash
+memri init --claude-code   # auto-detects Claude login, configures instantly
+```
+
+**Option 2 — Free Gemini API** *(takes 1 minute)*
 Google's Gemini 2.0 Flash has a permanently free tier — no credit card, no trial.
 Get a key in 1 minute: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 

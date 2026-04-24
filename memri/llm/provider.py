@@ -186,6 +186,107 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         )
 
 
+class ClaudeCodeAuthProvider(BaseLLMProvider):
+    """Uses Claude Code's existing OAuth session — no API key needed.
+
+    Any user who has run `claude` at least once already has credentials
+    stored at ~/.claude/.credentials.json. This provider reuses them,
+    so Claude Pro / Max / Team subscribers get full LLM-powered compression
+    without a separate API key.
+    """
+
+    _CREDS_PATH = None  # resolved lazily
+
+    def __init__(self, default_model: str = "claude-haiku-4-5-20251001"):
+        import json
+        from datetime import datetime, timezone
+        from pathlib import Path
+
+        creds_file = Path.home() / ".claude" / ".credentials.json"
+        if not creds_file.exists():
+            raise RuntimeError(
+                "Claude Code credentials not found.\n"
+                "Run 'claude' once to log in, then restart memri."
+            )
+        with open(creds_file) as f:
+            raw = json.load(f)
+
+        oauth = raw.get("claudeAiOauth", {})
+        self._access_token: str = oauth.get("accessToken", "")
+        self._refresh_token: str = oauth.get("refreshToken", "")
+        expires_raw = oauth.get("expiresAt")
+        self._expires_at = (
+            datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
+            if expires_raw else None
+        )
+        self._creds_file = creds_file
+        self.default_model = default_model
+        self.subscription_type = oauth.get("subscriptionType", "unknown")
+
+    def _token(self) -> str:
+        """Return current access token, refreshing if expired."""
+        from datetime import datetime, timezone
+        if self._expires_at and datetime.now(timezone.utc) >= self._expires_at:
+            self._refresh()
+        return self._access_token
+
+    def _refresh(self) -> None:
+        """Synchronous token refresh via Anthropic OAuth endpoint."""
+        import json
+        import urllib.request
+        body = json.dumps({
+            "grant_type": "refresh_token",
+            "refresh_token": self._refresh_token,
+        }).encode()
+        req = urllib.request.Request(
+            "https://claude.ai/api/auth/oauth/token",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        self._access_token = data["access_token"]
+        # Persist refreshed token back to credentials file
+        with open(self._creds_file) as f:
+            raw = json.load(f)
+        raw.setdefault("claudeAiOauth", {})["accessToken"] = self._access_token
+        if "expires_in" in data:
+            from datetime import datetime, timedelta, timezone
+            exp = datetime.now(timezone.utc) + timedelta(seconds=data["expires_in"])
+            raw["claudeAiOauth"]["expiresAt"] = exp.isoformat()
+            self._expires_at = exp
+        with open(self._creds_file, "w") as f:
+            json.dump(raw, f, indent=2)
+
+    async def complete(
+        self,
+        system_prompt: str,
+        user_message: str,
+        model: Optional[str] = None,
+        max_tokens: int = 8192,
+    ) -> LLMResponse:
+        import anthropic  # noqa: PLC0415
+
+        client = anthropic.AsyncAnthropic(auth_token=self._token())
+
+        async def _call():
+            return await client.messages.create(
+                model=model or self.default_model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+            )
+
+        response = await _with_retry(_call)
+        return LLMResponse(
+            content=response.content[0].text,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            model=response.model,
+        )
+
+
 class PassiveProvider(BaseLLMProvider):
     """No-API-key provider for users without LLM credentials.
 
