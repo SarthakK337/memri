@@ -226,6 +226,22 @@ The raw baseline establishes the upper bound for memri's compressed-context path
 
 ---
 
+## Privacy
+
+**Your data stays on your machine.**
+
+- All conversation history and observations are stored in `~/.memri/memri.db` — a local SQLite file only you can access. Nothing is sent to memri servers (there are none).
+- The only external calls memri makes are to your configured LLM provider (Anthropic, Gemini, or OpenAI) to run the Observer and Reflector agents. This is the same provider you're already using for your coding agent.
+- You can inspect, export, or delete everything at any time:
+  ```bash
+  memri status          # see what's stored
+  memri forget <thread> # delete a specific thread
+  rm ~/.memri/memri.db  # delete everything
+  ```
+- API keys are read from environment variables and never stored in the database.
+
+---
+
 ## Development
 
 ```bash
