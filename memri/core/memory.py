@@ -30,12 +30,47 @@ class MemriMemory:
     def __init__(self, config: Optional[MemriConfig] = None):
         self.config = config or MemriConfig.load()
         self.store = SQLiteStore(self.config.db_path)
-        provider = self.config.get_llm_provider()
-        self.observer = Observer(provider)
-        self.reflector = Reflector(provider)
-        self.strategist = StrategistAgent(self.store, provider)
         self.token_counter = TokenCounter()
         self.embedder = Embedder()
+        self._provider = None  # lazy — only created when LLM calls needed
+        self._observer = None
+        self._reflector = None
+        self._strategist = None
+
+    def _get_provider(self):
+        if self._provider is None:
+            self._provider = self.config.get_llm_provider()
+        return self._provider
+
+    @property
+    def observer(self) -> Observer:
+        if self._observer is None:
+            self._observer = Observer(self._get_provider())
+        return self._observer
+
+    @observer.setter
+    def observer(self, value):
+        self._observer = value
+
+    @property
+    def reflector(self) -> Reflector:
+        if self._reflector is None:
+            self._reflector = Reflector(self._get_provider())
+        return self._reflector
+
+    @reflector.setter
+    def reflector(self, value):
+        self._reflector = value
+
+    @property
+    def strategist(self) -> StrategistAgent:
+        if self._strategist is None:
+            self._strategist = StrategistAgent(self.store, self._get_provider())
+        return self._strategist
+
+    @strategist.setter
+    def strategist(self, value):
+        self._strategist = value
 
     # ──────────────────────── Thread management ────────────────────────
 
