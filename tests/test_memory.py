@@ -24,7 +24,9 @@ def tmp_config(tmp_path):
 
 @pytest.fixture
 def memory(tmp_config):
-    return MemriMemory(tmp_config)
+    mem = MemriMemory(tmp_config)
+    mem._provider = AsyncMock()  # prevent real SDK client creation in unit tests
+    return mem
 
 
 def test_ensure_thread_creates_thread(memory):
@@ -129,8 +131,10 @@ async def test_process_message_triggers_observer(tmp_config):
         ).TokenCounter()
         from memri.core.observer import Observer
         from memri.core.reflector import Reflector
+        from memri.core.strategist import StrategistAgent
         memory.observer = Observer(mock_provider)
         memory.reflector = Reflector(mock_provider)
+        memory.strategist = StrategistAgent(memory.store, mock_provider)
 
     ran = await memory.process_message(
         tid := str(uuid.uuid4()),
