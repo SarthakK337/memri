@@ -368,6 +368,98 @@ def embed():
     console.print(f"\n[green]ok[/green] Built embeddings for {total} observation block(s)")
 
 
+# ──────────────────────────── auth ─────────────────────────────────────
+
+
+@main.group()
+def auth():
+    """Manage LLM authentication."""
+
+
+@auth.command("login")
+@click.option("--provider", default=None,
+              type=click.Choice(["claude", "gemini", "anthropic", "openai", "ollama"]),
+              help="Provider to configure (auto-detected if omitted)")
+def auth_login(provider: Optional[str]):
+    """Interactively connect memri to an LLM provider.
+
+    Auto-detects the best option: Claude subscription, Google account,
+    free Gemini API, or manual API key entry.
+    """
+    from pathlib import Path
+    from .config import MemriConfig
+
+    config = MemriConfig.load()
+
+    claude_creds = Path.home() / ".claude" / ".credentials.json"
+    gcloud_creds = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
+
+    if provider in (None, "claude") and claude_creds.exists():
+        config.llm_provider = "claude-code-auth"
+        config.llm_model = "claude-haiku-4-5-20251001"
+        config.save()
+        console.print(
+            "[green]ok[/green] Configured [cyan]claude-code-auth[/cyan] — "
+            "using your Claude subscription (no API key needed)"
+        )
+        return
+
+    if provider in (None, "gemini") and gcloud_creds.exists():
+        config.llm_provider = "gemini-adc"
+        config.llm_model = "gemini-2.0-flash"
+        config.save()
+        console.print(
+            "[green]ok[/green] Configured [cyan]gemini-adc[/cyan] — "
+            "using your Google account credentials (no API key needed)"
+        )
+        return
+
+    # Manual key entry
+    console.print("\n[bold]No subscription credentials detected.[/bold]\n")
+    console.print("Choose an option:\n")
+    console.print("  [cyan]1[/cyan]  Claude subscription  →  run [bold]claude[/bold] once to log in, then re-run this command")
+    console.print("  [cyan]2[/cyan]  Google account       →  run [bold]gcloud auth application-default login[/bold], then re-run")
+    console.print("  [cyan]3[/cyan]  Free Gemini API key  →  [link=https://aistudio.google.com/apikey]aistudio.google.com/apikey[/link]  (30 sec, no card)")
+    console.print("  [cyan]4[/cyan]  Anthropic API key    →  [link=https://console.anthropic.com]console.anthropic.com[/link]")
+    console.print("  [cyan]5[/cyan]  Ollama (local)       →  [link=https://ollama.ai]ollama.ai[/link]\n")
+
+    choice = click.prompt("Option", type=click.Choice(["1", "2", "3", "4", "5"]), default="3")
+
+    if choice == "3":
+        key = click.prompt("Paste your Gemini API key", hide_input=True)
+        env_file = Path.home() / ".memri" / ".env"
+        with open(env_file, "a") as f:
+            f.write(f"\nGEMINI_API_KEY={key}\n")
+        config.llm_provider = "gemini"
+        config.llm_model = "gemini-2.0-flash"
+        config.save()
+        console.print("[green]ok[/green] Gemini API key saved to ~/.memri/.env")
+
+    elif choice == "4":
+        key = click.prompt("Paste your Anthropic API key", hide_input=True)
+        env_file = Path.home() / ".memri" / ".env"
+        with open(env_file, "a") as f:
+            f.write(f"\nANTHROPIC_API_KEY={key}\n")
+        config.llm_provider = "anthropic"
+        config.llm_model = "claude-haiku-4-5-20251001"
+        config.save()
+        console.print("[green]ok[/green] Anthropic API key saved to ~/.memri/.env")
+
+    elif choice == "5":
+        model = click.prompt("Ollama model name", default="llama3")
+        config.llm_provider = "openai-compatible"
+        config.llm_base_url = "http://localhost:11434/v1"
+        config.llm_model = model
+        config.save()
+        console.print(f"[green]ok[/green] Configured Ollama with model [cyan]{model}[/cyan]")
+
+    else:
+        console.print("[dim]Re-run [cyan]memri auth login[/cyan] after completing the step above.[/dim]")
+        return
+
+    console.print("\n[bold]Ready.[/bold] Start the MCP server: [cyan]memri mcp-server[/cyan]")
+
+
 # ─────────────────────────── config ────────────────────────────────────
 
 
