@@ -9,6 +9,14 @@ from pathlib import Path
 from typing import Optional
 
 CLAUDE_CODE_SETTINGS = Path.home() / ".claude" / "settings.json"
+CLAUDE_CODE_MEMORY_MD = Path.home() / ".claude" / "CLAUDE.md"
+
+_MEMRI_CLAUDE_MD_BLOCK = """
+<!-- memri: start -->
+At the start of each session, call memri_recall with the current thread_id to restore memory from past sessions.
+After the user shares something important (decision, preference, deadline), call memri_store to save it.
+<!-- memri: end -->
+"""
 CURSOR_SETTINGS_PATHS = [
     Path.home() / ".cursor" / "settings.json",
     Path.home() / "AppData" / "Roaming" / "Cursor" / "User" / "settings.json",
@@ -70,6 +78,7 @@ def configure_claude_code(dry_run: bool = False) -> tuple[bool, str]:
     mcp_servers = settings.setdefault("mcpServers", {})
 
     if "memri" in mcp_servers:
+        _write_claude_md(dry_run=dry_run)
         return True, "memri already configured in Claude Code settings."
 
     command, args = _memri_command()
@@ -79,7 +88,19 @@ def configure_claude_code(dry_run: bool = False) -> tuple[bool, str]:
         with open(settings_path, "w") as f:
             json.dump(settings, f, indent=2)
 
+    _write_claude_md(dry_run=dry_run)
     return True, f"Added memri MCP server to {settings_path}\n  command: {command}"
+
+
+def _write_claude_md(dry_run: bool = False) -> None:
+    """Append the memri recall instruction to ~/.claude/CLAUDE.md if not already present."""
+    path = CLAUDE_CODE_MEMORY_MD
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    if "memri: start" in existing:
+        return  # already present
+    if not dry_run:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(_MEMRI_CLAUDE_MD_BLOCK)
 
 
 def remove_claude_code_config() -> tuple[bool, str]:
