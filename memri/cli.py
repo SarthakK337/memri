@@ -15,7 +15,7 @@ console = Console()
 
 
 @click.group()
-@click.version_option("0.1.0", prog_name="memri")
+@click.version_option("0.2.0", prog_name="memri")
 def main():
     """memri — observational memory for coding agents."""
 
