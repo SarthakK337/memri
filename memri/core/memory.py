@@ -13,6 +13,7 @@ from ..storage.sqlite_store import SQLiteStore
 from .embedder import Embedder
 from .observer import Observer
 from .reflector import Reflector
+from .strategist import StrategistAgent
 from .token_counter import TokenCounter
 
 
@@ -32,6 +33,7 @@ class MemriMemory:
         provider = self.config.get_llm_provider()
         self.observer = Observer(provider)
         self.reflector = Reflector(provider)
+        self.strategist = StrategistAgent(self.store, provider)
         self.token_counter = TokenCounter()
         self.embedder = Embedder()
 
@@ -81,6 +83,9 @@ class MemriMemory:
             created_at=datetime.now(),
         )
         self.store.save_message(message)
+
+        # v0.2: check for frustration signals and extract strategies immediately
+        await self.strategist.process_message(thread_id, role, content)
 
         # Check whether we should run the observer
         unobserved = self.store.get_messages(thread_id, unobserved_only=True)
@@ -154,17 +159,35 @@ class MemriMemory:
     # ───────────────────────── Context building ────────────────────────
 
     def get_context(self, thread_id: str) -> str:
-        """Build the memory context block to inject at the top of a new agent turn."""
+        """Build the memory context block to inject at the top of a new agent turn.
+
+        v0.2: Strategies (procedural memory) are prepended before episodic observations.
+        Critical strategies (from frustration) appear first.
+        """
+        parts: list[str] = []
+
+        # 1. Strategies first — procedural "how to act" memory (v0.2)
+        strategies = self.store.get_strategies(thread_id, limit=20)
+        if strategies:
+            lines = "\n".join(s["content"] for s in strategies)
+            parts.append("## Strategies (How to act with this user)\n" + lines)
+
+        # 2. Episodic observations — factual "what happened" memory
         obs = self.store.get_observation(thread_id)
+        if obs and obs.content.strip():
+            # Filter out strategy rows from the observations block (they're shown above)
+            episodic_lines = [
+                l for l in obs.content.splitlines()
+                if "[STRATEGY/" not in l
+            ]
+            episodic = "\n".join(episodic_lines).strip()
+            if episodic:
+                parts.append("## Memory (Observations from past sessions)\n" + episodic)
+
+        # 3. Recent unobserved conversation
         recent = self.store.get_recent_messages(
             thread_id, max_tokens=self.config.observe_threshold
         )
-
-        parts: list[str] = []
-
-        if obs and obs.content.strip():
-            parts.append("## Memory (Observations from past sessions)\n" + obs.content)
-
         if recent:
             formatted = "\n\n".join(
                 f"[{m.role.upper()}]\n{m.content}" for m in recent

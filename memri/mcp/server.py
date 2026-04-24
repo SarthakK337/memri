@@ -193,6 +193,33 @@ async def memri_ingest(
     return "observed" if ran else "stored"
 
 
+# ─────────────────────── Tool: distill (v0.2) ──────────────────────────
+
+
+@mcp.tool()
+async def memri_distill(
+    thread_id: str,
+    outcome: str = "unknown",
+) -> str:
+    """Distill generalizable strategies from this session (v0.2 procedural memory).
+
+    Call at the end of a session to extract "what worked / what failed" as
+    permanent reasoning strategies — injected at the start of future sessions.
+
+    Args:
+        thread_id: The current conversation thread ID.
+        outcome: "success" | "failure" | "unknown"
+
+    Returns:
+        List of new strategies stored, or a message if nothing extracted.
+    """
+    strategies = await _memory.strategist.distill_session(thread_id, outcome=outcome)
+    if not strategies:
+        return "No new strategies extracted from this session."
+    lines = "\n".join(f"- {s}" for s in strategies)
+    return f"Extracted {len(strategies)} new strategies:\n{lines}"
+
+
 def run() -> None:
     """Entry point: `memri mcp-server`.
 
