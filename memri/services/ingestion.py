@@ -383,7 +383,7 @@ class IngestionService:
                 importance=base_importance,
                 emotional_weight=emotion_intensity,
                 source_episode_id=episode.id,
-                temporal_reference=item.get("temporal_reference"),
+                temporal_reference=temporal_ref or None,
                 session_index=session_index,
                 session_date=session_date,
             )

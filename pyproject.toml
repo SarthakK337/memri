@@ -4,19 +4,27 @@ build-backend = "hatchling.build"
 
 [project]
 name = "memri"
-version = "1.0.0"
-description = "Mastra-level memory intelligence in a pip install — observational memory for coding agents"
+version = "1.0.1"
+description = "Persistent graph-based memory for Claude Code, Cursor and Codex — cross-session recall via MCP"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-keywords = ["memory", "ai", "mcp", "claude", "coding-agent", "observational-memory"]
+keywords = [
+    "memory", "ai", "mcp", "claude", "claude-code", "cursor", "codex",
+    "coding-agent", "persistent-memory", "long-term-memory", "mcp-server",
+    "graph-memory", "ai-memory", "llm-memory", "agent-memory",
+    "cross-session", "context", "recall", "observational-memory"
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "anthropic>=0.50.0",
@@ -50,6 +58,12 @@ dev = [
     "pytest-asyncio>=0.23.0,<1.0.0",
     "pytest-cov>=5.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/SarthakK337/memri"
+Repository = "https://github.com/SarthakK337/memri"
+"Bug Tracker" = "https://github.com/SarthakK337/memri/issues"
+Changelog = "https://github.com/SarthakK337/memri/releases"
 
 [project.scripts]
 memri = "memri.cli:main"
