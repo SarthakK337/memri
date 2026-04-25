@@ -36,6 +36,7 @@ class MemriMemory:
         self._observer = None
         self._reflector = None
         self._strategist = None
+        self._graph_engine = None
 
     def _get_provider(self):
         if self._provider is None:
@@ -71,6 +72,16 @@ class MemriMemory:
     @strategist.setter
     def strategist(self, value):
         self._strategist = value
+
+    @property
+    def graph_engine(self):
+        if not hasattr(self, "_graph_engine") or self._graph_engine is None:
+            try:
+                self._graph_engine = self.config.get_graph_engine()
+            except Exception as e:
+                print(f"[memory] Graph engine init failed: {e}")
+                self._graph_engine = False  # sentinel: tried and failed
+        return self._graph_engine if self._graph_engine is not False else None
 
     # ──────────────────────── Thread management ────────────────────────
 
@@ -177,6 +188,15 @@ class MemriMemory:
         if updated_obs and updated_obs.token_count >= self.config.reflect_threshold:
             await self._run_reflector(thread_id)
 
+        # Feed batch to graph engine in background (best-effort)
+        if self.config.memory_engine == "graph" and self.graph_engine:
+            import asyncio as _asyncio
+            session_text = self._format_batch_for_graph(batch)
+            session_date = batch[0].created_at.strftime("%Y-%m-%d") if batch else None
+            _asyncio.ensure_future(
+                self._graph_ingest_silent(session_text, session_date)
+            )
+
     async def _run_reflector(self, thread_id: str) -> None:
         obs = self.store.get_observation(thread_id)
         if not obs:
@@ -194,6 +214,21 @@ class MemriMemory:
         self.store.replace_observations(thread_id, cleaned, cleaned_tokens)
         self.store.log_llm_call("reflect", model, inp_tok, out_tok, cost)
 
+    @staticmethod
+    def _format_batch_for_graph(messages) -> str:
+        parts = []
+        for m in messages:
+            role = "User" if m.role == "user" else "Assistant"
+            parts.append(f"{role}: {m.content}")
+        return "\n\n".join(parts)
+
+    async def _graph_ingest_silent(self, text: str, session_date: str = None) -> None:
+        try:
+            idx = self.graph_engine.layer2.count()
+            await self.graph_engine.add(text, session_index=idx, session_date=session_date)
+        except Exception:
+            pass
+
     # ───────────────────────── Context building ────────────────────────
 
     def get_context(self, thread_id: str) -> str:
@@ -203,6 +238,12 @@ class MemriMemory:
         Critical strategies (from frustration) appear first.
         """
         parts: list[str] = []
+
+        # Layer 0: entity/topic index from graph engine (cross-session awareness)
+        if self.config.memory_engine == "graph" and self.graph_engine:
+            l0 = self.graph_engine.context()
+            if l0.strip():
+                parts.append("## Memory Index\n" + l0)
 
         # 1. Strategies first — procedural "how to act" memory (v0.2)
         strategies = self.store.get_strategies(thread_id, limit=20)
@@ -267,13 +308,49 @@ class MemriMemory:
         Uses semantic (vector) search when sentence-transformers is installed,
         falls back to keyword search otherwise.
         """
+        if self.config.memory_engine == "graph" and self.graph_engine:
+            import asyncio as _asyncio
+            try:
+                loop = _asyncio.get_event_loop()
+                if loop.is_running():
+                    # Can't run nested — fall back to keyword search
+                    pass
+                else:
+                    return loop.run_until_complete(self._graph_search(query, top_k))
+            except Exception:
+                pass
+        # fallback: existing keyword/semantic search
         all_obs = self.store.get_all_observations()
         if not all_obs:
             return "No memories found."
-
         if self.embedder.available:
             return self._semantic_search(query, all_obs, top_k)
         return self._keyword_search(query, all_obs, top_k)
+
+    async def async_search(self, query: str, top_k: int = 5) -> str:
+        if self.config.memory_engine == "graph" and self.graph_engine:
+            try:
+                return await self._graph_search(query, top_k)
+            except Exception:
+                pass
+        all_obs = self.store.get_all_observations()
+        if not all_obs:
+            return "No memories found."
+        if self.embedder.available:
+            return self._semantic_search(query, all_obs, top_k)
+        return self._keyword_search(query, all_obs, top_k)
+
+    async def _graph_search(self, query: str, top_k: int) -> str:
+        results = await self.graph_engine.search(query, top_k=top_k)
+        if not results:
+            return "No relevant memories found."
+        lines = []
+        for r in results:
+            content = r.node.content
+            date = f" [{r.node.temporal_date}]" if r.node.temporal_date else ""
+            confidence = " (low confidence)" if r.low_confidence else ""
+            lines.append(f"- {content}{date}{confidence}")
+        return "\n".join(lines)
 
     def _keyword_search(self, query: str, all_obs, top_k: int) -> str:
         q = query.lower()
@@ -382,7 +459,7 @@ class MemriMemory:
 
     def get_stats(self) -> dict:
         stats = self.store.get_stats()
-        return {
+        result = {
             "threads": stats.total_threads,
             "messages": stats.total_messages,
             "observations": stats.total_observations,
@@ -392,3 +469,6 @@ class MemriMemory:
             "oldest_memory": stats.oldest_memory.isoformat() if stats.oldest_memory else None,
             "newest_memory": stats.newest_memory.isoformat() if stats.newest_memory else None,
         }
+        if self.config.memory_engine == "graph" and self.graph_engine:
+            result["graph"] = self.graph_engine.stats()
+        return result

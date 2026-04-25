@@ -336,7 +336,7 @@ body {
     <div class="s-logo-icon">m</div>
     <div>
       <div class="s-logo-name">memri</div>
-      <div class="s-logo-ver">v0.1.0 &middot; observational memory</div>
+      <div class="s-logo-ver">v1.0.0 &middot; graph memory</div>
     </div>
   </div>
   <nav class="s-nav">
@@ -353,6 +353,18 @@ body {
     <button class="s-btn" onclick="goPage(this,'search')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
       Search
+    </button>
+    <button class="s-btn" onclick="goPage(this,'memory-graph')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5m0 0l-5 5m5-5l5 5"/></svg>
+      Memory Graph
+    </button>
+    <button class="s-btn" onclick="goPage(this,'layer0')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      Layer 0
+    </button>
+    <button class="s-btn" onclick="goPage(this,'episodes')">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+      Episodes
     </button>
     <button class="s-btn" onclick="goPage(this,'timeline')">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
@@ -484,6 +496,53 @@ body {
     </div>
   </div>
 
+  <!-- Memory Graph page -->
+  <div class="page" id="page-memory-graph">
+    <div class="page-inner">
+      <div class="box" style="margin-bottom:16px">
+        <div class="box-head">
+          <span class="box-title">Memory Graph</span>
+          <span class="badge" id="graph-node-count">–</span>
+        </div>
+        <div style="padding:12px 18px;font-size:12px;color:var(--text-3)">
+          Click a node to inspect its content. Colors: <span style="color:#60a5fa">fact</span> &nbsp; <span style="color:#fb923c">entity</span> &nbsp; <span style="color:#a78bfa">reflection</span> &nbsp; <span style="color:#6b7280">episode</span>
+        </div>
+        <canvas id="graph-canvas" style="width:100%;height:520px;display:block;background:var(--surface2);border-top:1px solid var(--border)"></canvas>
+      </div>
+      <div class="box" id="graph-node-detail" style="display:none">
+        <div class="box-head"><span class="box-title">Node Detail</span></div>
+        <div id="graph-node-content" style="padding:16px 18px;font-size:13px;color:var(--text-2);line-height:1.6"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer 0 page -->
+  <div class="page" id="page-layer0">
+    <div class="page-inner">
+      <div class="box" style="margin-bottom:16px">
+        <div class="box-head"><span class="box-title">Memory Index (Layer 0)</span></div>
+        <div id="layer0-content" style="padding:16px 18px">
+          <div class="spin"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Episodes page -->
+  <div class="page" id="page-episodes">
+    <div class="page-inner">
+      <div class="box">
+        <div class="box-head">
+          <span class="box-title">Episodes (Layer 2)</span>
+          <span class="badge" id="episodes-count">–</span>
+        </div>
+        <div id="episodes-list" style="padding:0">
+          <div class="empty"><div class="spin"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /content-area -->
 </div><!-- /layout -->
 
@@ -494,7 +553,7 @@ let _currentThread = null;
 let _currentTab = 'msgs';
 
 // ── Navigation ────────────────────────────────────────────────────
-const TITLES = { overview:'Overview', sessions:'Sessions', detail:'Session Detail', search:'Search Memories', timeline:'Observation Timeline', settings:'Settings' };
+const TITLES = { overview:'Overview', sessions:'Sessions', detail:'Session Detail', search:'Search Memories', timeline:'Observation Timeline', settings:'Settings', 'memory-graph':'Memory Graph', layer0:'Memory Index', episodes:'Episodes (Layer 2)' };
 
 function goPage(btn, id) {
   document.querySelectorAll('.s-btn').forEach(b => b.classList.remove('active'));
@@ -525,6 +584,9 @@ function goPage(btn, id) {
   if (id === 'sessions') loadSessions();
   if (id === 'timeline') loadTimeline();
   if (id === 'settings') loadSettings();
+  if (id === 'memory-graph') loadMemoryGraph();
+  if (id === 'layer0') loadLayer0();
+  if (id === 'episodes') loadEpisodes();
 }
 
 // ── API ───────────────────────────────────────────────────────────
@@ -848,6 +910,173 @@ async function saveSettings() {
   setTimeout(() => msg.style.display = 'none', 2500);
 }
 
+// ── Memory Graph ─────────────────────────────────────────────────
+let _graphData = null;
+async function loadMemoryGraph() {
+  try {
+    _graphData = await api('/api/graph');
+  } catch(e) {
+    document.getElementById('graph-canvas').style.display = 'none';
+    document.getElementById('graph-node-count').textContent = 'unavailable';
+    return;
+  }
+  const nodes = _graphData.nodes || [];
+  const edges = _graphData.edges || [];
+  document.getElementById('graph-node-count').textContent = nodes.length + ' nodes';
+  const canvas = document.getElementById('graph-canvas');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width || 800;
+  canvas.height = 520;
+  const ctx = canvas.getContext('2d');
+
+  // Assign positions with simple force-directed layout
+  const W = canvas.width, H = canvas.height;
+  const pos = {};
+  nodes.forEach((n, i) => {
+    const angle = (i / nodes.length) * 2 * Math.PI;
+    const r = Math.min(W, H) * 0.35;
+    pos[n.id] = { x: W/2 + r * Math.cos(angle), y: H/2 + r * Math.sin(angle), vx: 0, vy: 0 };
+  });
+
+  // Simple force simulation
+  const nodeMap = {};
+  nodes.forEach(n => nodeMap[n.id] = n);
+  for (let iter = 0; iter < 120; iter++) {
+    // Repulsion
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i+1; j < nodes.length; j++) {
+        const a = pos[nodes[i].id], b = pos[nodes[j].id];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.sqrt(dx*dx + dy*dy) || 1;
+        const f = 800 / (d*d);
+        a.vx -= f*dx/d; a.vy -= f*dy/d;
+        b.vx += f*dx/d; b.vy += f*dy/d;
+      }
+    }
+    // Attraction along edges
+    edges.forEach(e => {
+      const a = pos[e.source], b = pos[e.target];
+      if (!a || !b) return;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx*dx + dy*dy) || 1;
+      const f = d * 0.01;
+      a.vx += f*dx/d; a.vy += f*dy/d;
+      b.vx -= f*dx/d; b.vy -= f*dy/d;
+    });
+    // Center gravity + damping
+    nodes.forEach(n => {
+      const p = pos[n.id];
+      p.vx += (W/2 - p.x) * 0.002;
+      p.vy += (H/2 - p.y) * 0.002;
+      p.x += p.vx * 0.5; p.y += p.vy * 0.5;
+      p.vx *= 0.8; p.vy *= 0.8;
+      p.x = Math.max(20, Math.min(W-20, p.x));
+      p.y = Math.max(20, Math.min(H-20, p.y));
+    });
+  }
+
+  const COLOR = { fact:'#60a5fa', entity:'#fb923c', reflection:'#a78bfa', episode:'#6b7280' };
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // Draw edges
+    ctx.strokeStyle = 'rgba(100,100,100,0.3)';
+    ctx.lineWidth = 1;
+    edges.forEach(e => {
+      const a = pos[e.source], b = pos[e.target];
+      if (!a || !b) return;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    });
+    // Draw nodes
+    nodes.forEach(n => {
+      const p = pos[n.id];
+      const r = n.type === 'entity' ? 7 : n.type === 'episode' ? 5 : 6;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, 2*Math.PI);
+      ctx.fillStyle = COLOR[n.type] || '#888';
+      ctx.fill();
+      if (n.importance > 0.7) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+      }
+    });
+  }
+  draw();
+
+  // Click handler
+  canvas.onclick = (ev) => {
+    const rect2 = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect2.left, my = ev.clientY - rect2.top;
+    for (const n of nodes) {
+      const p = pos[n.id];
+      if (!p) continue;
+      const dx = p.x - mx, dy = p.y - my;
+      if (dx*dx + dy*dy < 100) {
+        const detail = document.getElementById('graph-node-detail');
+        detail.style.display = 'block';
+        document.getElementById('graph-node-content').innerHTML =
+          '<b>' + n.type.toUpperCase() + '</b> &nbsp; <span style="color:var(--text-3);font-size:11px">' + n.id + '</span><br><br>' +
+          '<span style="white-space:pre-wrap">' + (n.content||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' +
+          '<br><br><span style="color:var(--text-3);font-size:11px">importance: ' + (n.importance||0).toFixed(2) +
+          ' &nbsp; session: ' + (n.session_index ?? '—') + '</span>';
+        break;
+      }
+    }
+  };
+}
+
+// ── Layer 0 ───────────────────────────────────────────────────────
+async function loadLayer0() {
+  const el = document.getElementById('layer0-content');
+  el.innerHTML = '<div class="spin"></div>';
+  let d;
+  try { d = await api('/api/layer0'); } catch(e) {
+    el.innerHTML = '<div class="empty"><div class="empty-ico">&#128203;</div><h3>Graph engine not active</h3><p>Enable graph memory or ingest sessions to see the memory index.</p></div>';
+    return;
+  }
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let html = '<div style="display:grid;gap:14px;max-width:700px">';
+  if (d.user_summary) html += '<div class="box" style="padding:14px 18px"><b>User Summary</b><p style="color:var(--text-2);margin-top:6px;line-height:1.6">' + esc(d.user_summary) + '</p></div>';
+  if (d.emotional_state) html += '<div class="box" style="padding:14px 18px"><b>Emotional State</b><p style="color:var(--text-2);margin-top:6px">' + esc(d.emotional_state) + '</p></div>';
+  if (d.active_topics && d.active_topics.length) html += '<div class="box" style="padding:14px 18px"><b>Active Topics</b><p style="color:var(--text-2);margin-top:6px">' + d.active_topics.map(t => '<span class="badge" style="margin-right:4px">'+esc(t)+'</span>').join('') + '</p></div>';
+  if (d.entity_index && Object.keys(d.entity_index).length) {
+    html += '<div class="box" style="padding:14px 18px"><b>Entity Index</b><div style="margin-top:10px;display:grid;gap:6px">';
+    for (const [name, ids] of Object.entries(d.entity_index).slice(0,30)) {
+      html += '<div style="display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-weight:500;min-width:120px">' + esc(name) + '</span><span style="color:var(--text-3);font-size:12px">' + ids.length + ' fact(s)</span></div>';
+    }
+    html += '</div></div>';
+  }
+  html += '<div style="font-size:11px;color:var(--text-3)">Facts: ' + (d.fact_count||0) + ' &nbsp; Reflections: ' + (d.reflection_count||0) + ' &nbsp; Last updated: ' + (d.last_updated||'').slice(0,19) + '</div>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// ── Episodes ─────────────────────────────────────────────────────
+async function loadEpisodes() {
+  const el = document.getElementById('episodes-list');
+  el.innerHTML = '<div class="empty"><div class="spin"></div></div>';
+  let data;
+  try { data = await api('/api/episodes'); } catch(e) {
+    el.innerHTML = '<div class="empty"><div class="empty-ico">&#128196;</div><h3>Graph engine not active</h3></div>';
+    return;
+  }
+  document.getElementById('episodes-count').textContent = data.length;
+  if (!data.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-ico">&#128196;</div><h3>No episodes yet</h3><p>Episodes are stored when the graph engine ingests conversations.</p></div>';
+    return;
+  }
+  el.innerHTML = data.map(ep => {
+    const preview = (ep.raw_text||'').slice(0, 120).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const full = (ep.raw_text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return '<div style="border-bottom:1px solid var(--border);padding:12px 18px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+      '<span style="font-family:monospace;font-size:12px;color:var(--text-2)">#' + (ep.session_index??0) + ' &nbsp; ' + (ep.session_date||'—') + '</span>' +
+      '<span style="font-size:11px;color:var(--text-3)">' + (ep.id||'').slice(0,8) + '</span></div>' +
+      '<details><summary style="font-size:12.5px;color:var(--text-3);cursor:pointer">' + preview + '…</summary>' +
+      '<pre style="font-size:12px;line-height:1.6;color:var(--text-2);white-space:pre-wrap;word-break:break-word;margin-top:8px">' + full + '</pre></details>' +
+      '</div>';
+  }).join('');
+}
+
 // ── Reload ────────────────────────────────────────────────────────
 function reload() {
   loadStats();
@@ -855,6 +1084,9 @@ function reload() {
   const active = document.querySelector('.page.active');
   if (active && active.id === 'page-timeline') loadTimeline();
   if (active && active.id === 'page-settings') loadSettings();
+  if (active && active.id === 'page-memory-graph') loadMemoryGraph();
+  if (active && active.id === 'page-layer0') loadLayer0();
+  if (active && active.id === 'page-episodes') loadEpisodes();
 }
 
 // ── Boot ──────────────────────────────────────────────────────────
@@ -975,6 +1207,33 @@ async def api_config_post(request: Request):
             setattr(_config, key, value)
     _config.save()
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/graph")
+async def api_graph():
+    """Return serializable graph data for visualization."""
+    engine = _memory.graph_engine
+    if not engine:
+        raise HTTPException(503, "Graph engine not available")
+    return JSONResponse(engine.get_graph_data())
+
+
+@app.get("/api/layer0")
+async def api_layer0():
+    """Return Layer 0 (memory index) data."""
+    engine = _memory.graph_engine
+    if not engine:
+        raise HTTPException(503, "Graph engine not available")
+    return JSONResponse(engine.get_layer0().model_dump(mode="json"))
+
+
+@app.get("/api/episodes")
+async def api_episodes():
+    """Return all Layer 2 episodes."""
+    engine = _memory.graph_engine
+    if not engine:
+        raise HTTPException(503, "Graph engine not available")
+    return JSONResponse(engine.get_episodes())
 
 
 def run(host: str = "127.0.0.1", port: int = 8050) -> None:

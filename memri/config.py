@@ -45,6 +45,10 @@ class MemriConfig:
     watch_cursor: bool = False
     watch_codex: bool = False
 
+    # Memory engine
+    memory_engine: str = "graph"   # "graph" (v1.0 graph-based) | "observer" (v0.2 fallback)
+    graph_path: str = field(default_factory=lambda: str(MEMRI_DIR / "graph"))
+
     @classmethod
     def load(cls) -> MemriConfig:
         config = cls()
@@ -132,3 +136,10 @@ class MemriConfig:
             base_url=self.llm_base_url,
             default_model=self.llm_model,
         )
+
+    def get_graph_engine(self) -> "GraphMemoryEngine":
+        from .core.graph_memory import GraphMemoryEngine
+        from .llm.graph_adapter import GraphLLMAdapter
+        provider = self.get_llm_provider()
+        adapter = GraphLLMAdapter(provider, self.llm_model)
+        return GraphMemoryEngine(Path(self.graph_path), adapter)

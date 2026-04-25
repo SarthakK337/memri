@@ -1,6 +1,6 @@
 # memri
 
-**Persistent memory for AI coding agents — in a `pip install`.**
+**Persistent, graph-based memory for AI coding agents — in a `pip install`.**
 
 [![PyPI](https://img.shields.io/pypi/v/memri)](https://pypi.org/project/memri/)
 [![Python](https://img.shields.io/pypi/pyversions/memri)](https://pypi.org/project/memri/)
@@ -13,19 +13,23 @@
 
 Every time you start a new session with Claude Code, Cursor, or Codex — it forgets everything. The architecture you designed last week. The library you chose. The bug you already fixed. You repeat yourself. The agent repeats mistakes.
 
-**memri fixes this.** It runs silently alongside your coding agent, compresses your conversation history into dense observations, and injects them at the start of every new session. Your agent picks up exactly where it left off.
+**memri fixes this.** It builds a structured graph of your memory — entities, facts, causal chains, and reflections — and injects the most relevant context at the start of every new session. Your agent picks up exactly where it left off.
 
 ---
 
 ## Features
 
+- **Graph-based memory** *(v1.0)* — entities, facts, causal chains, and higher-level reflections stored in a queryable graph
+- **Entity tracking** *(v1.0)* — people, places, and concepts are linked across all sessions
+- **Three-layer architecture** *(v1.0)* — always-in-context index (Layer 0), fact graph (Layer 1), raw episode archive (Layer 2)
+- **RRF ranking** *(v1.0)* — Reciprocal Rank Fusion across vector, BM25, importance, and recency signals
 - **Automatic compression** — conversations beyond 30K tokens are compressed 5–40× into timestamped observations
-- **Cross-session recall** — observations are injected at the start of every new session, no setup needed per conversation
+- **Cross-session recall** — memory context is injected at the start of every new session, no setup needed
 - **Semantic search** — find anything from past sessions with natural language (`memri_search "auth pattern we chose"`)
 - **Procedural memory** *(v0.2)* — learns *how to work better with you* over time, not just *what happened*
 - **Frustration detection** *(v0.2)* — detects when you're frustrated and permanently stores what went wrong as a high-priority strategy
 - **Works with any LLM** — Anthropic, Gemini, OpenAI, or any OpenAI-compatible endpoint
-- **100% local** — SQLite database on your machine, no cloud, no accounts
+- **100% local** — all data on your machine, no cloud, no accounts
 
 ---
 
@@ -35,7 +39,13 @@ Every time you start a new session with Claude Code, Cursor, or Codex — it for
 pip install memri
 ```
 
-With semantic search:
+With full graph memory (recommended):
+
+```bash
+pip install "memri[graph]"
+```
+
+With semantic search only:
 
 ```bash
 pip install "memri[embeddings]"
@@ -70,27 +80,41 @@ Your conversation
       │           compresses turns → timestamped observations (5–40× smaller)
       │
   [Strategist]    runs on every message                           (v0.2)
-      │           detects frustration → 🔴 stores "what went wrong"
-      │           end of session → distills "what worked" → 🟡🔵 strategies
+      │           detects frustration → stores "what went wrong"
+      │           end of session → distills "what worked" → strategies
       ▼
- [SQLiteStore]    ~/.memri/memri.db  (observations + strategies + embeddings)
+ [GraphEngine]    primary memory backend                          (v1.0)
+      │
+      ├── Layer 2  raw episode archive  (SQLite, zero data loss)
+      │
+      ├── Layer 1  fact/entity/reflection graph  (NetworkX)
+      │            causal chains, temporal edges, entity linking
+      │
+      └── Layer 0  always-in-context routing index  (~500 tokens)
+                   entity index, topic clusters, user summary
       │
       ▼
-  [Reflector]     triggers at 40K observation tokens
-      │           garbage-collects stale / redundant observations
-      ▼
- [get_context()]  prepends strategies → then observations → then recent turns
+ [get_context()]  Layer 0 index → strategies → observations → recent turns
       │
       ▼
  Injected at the top of your next session
 ```
 
-**Two types of memory:**
+**Three layers of memory:**
+
+| Layer | What it stores | Size |
+|-------|---------------|------|
+| Layer 0 | Entity index, topic clusters, user summary — always in context | ~500 tokens |
+| Layer 1 | Fact/entity/reflection graph with causal and temporal edges | grows with sessions |
+| Layer 2 | Raw episode archive — zero data loss, full session text | cold storage |
+
+**Three types of memory content:**
 
 | Type | What it stores | Example |
 |------|---------------|---------|
 | Episodic | What happened in past sessions | *"User chose PostgreSQL over SQLite on 2026-04-10"* |
 | Procedural | How to work better with this user | *"Always confirm before running destructive commands"* |
+| Graph | Entity relationships and causal chains | *"Deadline stress caused repeated tool failures"* |
 
 ---
 
@@ -223,7 +247,7 @@ Evaluated on [LongMemEval-S](https://arxiv.org/abs/2410.10813) — 500 QA pairs 
 | Multi-session | ~50% |
 | **Overall** | **70.6%** |
 
-This is the ceiling for the compressed-context path. Smriti integration (in progress) targets **80%+**.
+This is the ceiling for the compressed-context path. The v1.0 graph memory engine targets **80%+**.
 
 ---
 
@@ -234,7 +258,10 @@ This is the ceiling for the compressed-context path. Smriti integration (in prog
 | Language | Python | TypeScript | Python | — |
 | Install | `pip install` | framework lock-in | `pip install` | — |
 | Works with | Claude Code, Cursor, Codex | Mastra only | any | any |
-| Storage | local SQLite | cloud | cloud | none |
+| Storage | local SQLite + graph | cloud | cloud | none |
+| Graph-based memory | ✅ v1.0 | ❌ | ❌ | ❌ |
+| Entity tracking | ✅ v1.0 | ❌ | partial | ❌ |
+| Causal chains | ✅ v1.0 | ❌ | ❌ | ❌ |
 | Procedural memory | ✅ v0.2 | ❌ | ❌ | ❌ |
 | Frustration detection | ✅ v0.2 | ❌ | ❌ | ❌ |
 | Semantic search | ✅ local | ❌ | ✅ cloud | ❌ |
@@ -266,7 +293,7 @@ rm ~/.memri/memri.db       # delete everything
 ```bash
 git clone https://github.com/SarthakK337/memri
 cd memri
-pip install -e ".[dev,embeddings]"
+pip install -e ".[dev,graph,embeddings]"
 pytest
 ```
 

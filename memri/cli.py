@@ -15,7 +15,7 @@ console = Console()
 
 
 @click.group()
-@click.version_option("0.2.0", prog_name="memri")
+@click.version_option("1.0.0", prog_name="memri")
 def main():
     """memri — observational memory for coding agents."""
 
@@ -135,6 +135,15 @@ def status():
     table.add_row("Net savings", f"${net:.4f}")
     if stats.get("oldest_memory"):
         table.add_row("Oldest memory", stats["oldest_memory"][:10])
+
+    if stats.get("graph"):
+        g = stats["graph"]
+        table.add_row("─── Graph Memory ───", "")
+        table.add_row("Facts", str(g["facts"]))
+        table.add_row("Entities", str(g["entities"]))
+        table.add_row("Reflections", str(g["reflections"]))
+        table.add_row("Episodes (Layer 2)", str(g["episodes"]))
+        table.add_row("Graph edges", str(g["edges"]))
 
     console.print(table)
 

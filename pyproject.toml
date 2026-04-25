@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "memri"
-version = "0.2.0"
+version = "1.0.0"
 description = "Mastra-level memory intelligence in a pip install — observational memory for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,11 +32,18 @@ dependencies = [
     "rich>=13.0.0",
     "httpx>=0.27.0",
     "google-genai>=1.0.0",
+    "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]
 embeddings = [
     "sentence-transformers>=3.0.0",
+]
+graph = [
+    "networkx>=3.0",
+    "chromadb>=0.5.0",
+    "rank-bm25>=0.2.2",
+    "pydantic>=2.0",
 ]
 dev = [
     "pytest>=8.0.0",

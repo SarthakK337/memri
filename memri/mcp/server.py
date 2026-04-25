@@ -85,7 +85,7 @@ def memri_store(
 
 
 @mcp.tool()
-def memri_search(
+async def memri_search(
     query: str,
     top_k: int = 5,
 ) -> str:
@@ -102,7 +102,7 @@ def memri_search(
     Returns:
         Relevant memory snippets from all past sessions.
     """
-    return _memory.search(query, top_k=top_k)
+    return await _memory.async_search(query, top_k=top_k)
 
 
 # ─────────────────────────── Tool: status ──────────────────────────────
