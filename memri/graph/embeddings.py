@@ -63,3 +63,10 @@ class EmbeddingStore:
             self.collection.delete(ids=[node_id])
         except Exception:
             pass
+
+    def close(self) -> None:
+        """Release file handles so the storage directory can be deleted on Windows."""
+        try:
+            self.client._system.stop()
+        except Exception:
+            pass

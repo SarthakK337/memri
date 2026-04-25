@@ -335,16 +335,36 @@ class IngestionService:
         # Step 3: Create fact nodes + entity linking
         fact_nodes: List[MemoryNode] = []
         for item in extracted:
-            emotion_label = str(item.get("emotion_label", "neutral")).lower()
-            emotion_intensity = float(item.get("emotion_intensity", 0.0))
-            base_importance = float(item.get("importance", 0.5))
+            if not isinstance(item, dict):
+                continue
+
+            emotion_label = str(item.get("emotion_label", "neutral") or "neutral").lower()
+            try:
+                emotion_intensity = float(item.get("emotion_intensity", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                emotion_intensity = 0.0
+            try:
+                base_importance = float(item.get("importance", 0.5) or 0.5)
+            except (TypeError, ValueError):
+                base_importance = 0.5
+
             # Boost importance for negative-emotion facts
             if emotion_label in NEGATIVE_EMOTIONS and emotion_intensity > 0.1:
                 base_importance = min(1.0, base_importance + 0.25)
 
+            # Coerce content to string — LLM occasionally returns a list or None
+            raw_content = item.get("content", "")
+            if isinstance(raw_content, list):
+                raw_content = " ".join(str(x) for x in raw_content)
+            content = str(raw_content or "").strip()
+            if not content:
+                continue
+
+            # Coerce temporal_reference to string
+            raw_ref = item.get("temporal_reference", "")
+            temporal_ref = str(raw_ref).strip() if raw_ref is not None else ""
+
             # Resolve relative temporal references → append to content so BM25 indexes them
-            content = item.get("content", "")
-            temporal_ref = item.get("temporal_reference", "") or ""
             if session_date and temporal_ref and _RELATIVE_KEYWORDS.search(temporal_ref):
                 resolved = resolve_temporal_reference(temporal_ref, session_date)
                 if resolved and resolved not in content:
@@ -387,8 +407,8 @@ class IngestionService:
             # Fallback: use LLM entity list filtered to multi-word or capitalized names
             # when spaCy is not available
             if not proper_entities and not HAS_SPACY:
-                for name in item.get("entities", []):
-                    name = name.strip()
+                for name in item.get("entities", []) or []:
+                    name = str(name).strip()
                     if name and (name[0].isupper() or len(name.split()) > 1):
                         proper_entities.append(name)
             for entity_name in proper_entities:
