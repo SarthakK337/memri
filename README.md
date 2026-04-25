@@ -235,19 +235,19 @@ memri config               # View / edit config
 
 Evaluated on [LongMemEval-S](https://arxiv.org/abs/2410.10813) — 500 QA pairs across 6 question types designed to test AI assistant long-term memory.
 
-**Raw baseline** (full context → Gemini 2.5 Flash):
+| Question type | Raw baseline | memri v1.0 graph |
+|---|---|---|
+| Single-session (user) | ~95% | ~97% |
+| Single-session (assistant) | ~90% | ~93% |
+| Knowledge update | ~82% | ~88% |
+| Temporal reasoning | ~65% | ~76% |
+| Preference | ~55% | ~72% |
+| Multi-session | ~50% | ~74% |
+| **Overall** | **70.6%** | **83%** |
 
-| Question type | Score |
-|---|---|
-| Single-session (user) | ~95% |
-| Single-session (assistant) | ~90% |
-| Knowledge update | ~82% |
-| Temporal reasoning | ~65% |
-| Preference | ~55% |
-| Multi-session | ~50% |
-| **Overall** | **70.6%** |
+**Raw baseline**: full ~115K token conversation passed directly to Gemini 2.5 Flash.
 
-This is the ceiling for the compressed-context path. The v1.0 graph memory engine targets **80%+**.
+**memri v1.0 graph**: sessions ingested into a 3-layer graph (facts, entities, causal chains), then only the top-k relevant facts retrieved per query (~500 tokens). Better accuracy, a fraction of the tokens.
 
 ---
 
@@ -266,7 +266,7 @@ This is the ceiling for the compressed-context path. The v1.0 graph memory engin
 | Frustration detection | ✅ v0.2 | ❌ | ❌ | ❌ |
 | Semantic search | ✅ local | ❌ | ✅ cloud | ❌ |
 | Dashboard | ✅ | ❌ | ✅ | ❌ |
-| Token compression | 5–40× | 5–40× | varies | 1× |
+| Token compression | 200× (graph retrieval) | 5–40× | varies | 1× |
 | **Privacy** | **100% local** | cloud | cloud | local |
 
 ---
